@@ -8,9 +8,9 @@
 
 **Tech Stack:** Python 3.11 / FastAPI / SQLAlchemy 2.0 (sync, PyMySQL) / pymilvus / oss2 / httpx / python-docx / PyMuPDF / openpyxl / trafilatura / PyJWT / pytest
 
-**Spec:** `/Users/jiajia/Desktop/rag知识库设计文档/2026-11-14-rag知识库管理平台-设计文档.md`（v2；本计划覆盖其 §10 路线图第 1 步。问答链路 + Trace 埋点见 Plan 2，前端见 Plan 3）
+**Spec:** 仓库根目录 `2026-11-14-rag知识库管理平台-设计文档.md`（v2；本计划覆盖其 §10 路线图第 1 步。问答链路 + Trace 埋点见 Plan 2，前端见 Plan 3）
 
-**仓库位置（默认，可改）：** `/Users/jiajia/Desktop/rag-kb`
+**仓库位置：** `/Users/yunchi/Desktop/everkb`（已建，远程 github.com/xiaochuanchi/everkb）
 
 ## Global Constraints
 
@@ -50,7 +50,7 @@
 - [ ] **Step 1: 初始化仓库**
 
 ```bash
-mkdir -p /Users/jiajia/Desktop/rag-kb && cd /Users/jiajia/Desktop/rag-kb && git init
+cd /Users/yunchi/Desktop/everkb  # 仓库已建（github.com/xiaochuanchi/everkb），无需 git init
 mkdir -p backend/app/core backend/app/api backend/app/parsers backend/app/services backend/tests scripts frontend
 python3.11 -m venv .venv && source .venv/bin/activate
 ```
@@ -186,7 +186,7 @@ def get_parser(file_type: str) -> Parser    # 未知类型抛 ValueError
 - Test: `backend/tests/test_pdf_parser.py`, `test_xlsx_parser.py`, `test_webpage.py`
 
 **Interfaces:**
-- Produces: `PdfParser`（逐页文本，页间插 `\n\n<!-- page:N -->\n\n`，全文 < 20 字符 → `ok=False, reason="疑似扫描件：未提取到文本层，请上传文字版或等待 OCR 支持"`）；`XlsxParser`（每 sheet 表头+数据行转管道表，数据行 > 20 拆多张表；sheet 首块前插 `# 工作表: {name}`）；`html_to_markdown(html: bytes) -> str`（trafilatura `output_format="markdown"`，空结果抛 `ParseError`）；`fetch_and_extract(url: str, timeout: float = 30.0) -> tuple[bytes, str]`（httpx 拉取 UA `rag-kb/0.1`，返回 (html_bytes, md)；thin 不做单测）
+- Produces: `PdfParser`（逐页文本，页间插 `\n\n<!-- page:N -->\n\n`，全文 < 20 字符 → `ok=False, reason="疑似扫描件：未提取到文本层，请上传文字版或等待 OCR 支持"`）；`XlsxParser`（每 sheet 表头+数据行转管道表，数据行 > 20 拆多张表；sheet 首块前插 `# 工作表: {name}`）；`html_to_markdown(html: bytes) -> str`（trafilatura `output_format="markdown"`，空结果抛 `ParseError`）；`fetch_and_extract(url: str, timeout: float = 30.0) -> tuple[bytes, str]`（httpx 拉取 UA `everkb/0.1`，返回 (html_bytes, md)；thin 不做单测）
 
 - [ ] **Step 1: 写失败测试（pdf）**：fitz 现场造 2 页 PDF（各插文本）→ ok=True，md 含 `<!-- page:1 -->` 与 `<!-- page:2 -->` 及两页文字；造无文本 PDF → ok=False 且 reason 含 "扫描件"
 - [ ] **Step 2: 写失败测试（xlsx）**：openpyxl 造 sheet（表头 3 列 + 25 行数据）→ 管道表拆为两张（20 行 + 5 行），含 `# 工作表: Sheet` 标题
