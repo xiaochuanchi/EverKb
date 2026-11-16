@@ -14,6 +14,7 @@
   - 已有完成版本的替换：先记录 old_ids，全新入库成功后才 vector.delete_by_ids + 删旧行
     （替换期间旧版本向量持续供检索）
 """
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -122,6 +123,17 @@ def process_document(
             raise PipelineError(
                 f"向量化返回数与切块数不符：{len(vectors)} != {len(texts)}"
             )
+        # ── 并发守卫（终审 Critical #1 / Important #2）：insert 前现读 doc 行。
+        # status=4 已 commit，本 SELECT 开新事务才看得到他方提交；raw 列 SELECT
+        # 绕过 identity map 缓存，避免读到过期 enabled / 漏判删除。
+        fresh = session.execute(
+            select(Document.status, Document.enabled).where(Document.id == doc_id)
+        ).first()
+        if fresh is None:
+            # 处理期间被 API 删除：丢弃本次处理，绝不插入孤儿可搜向量（红线 3）
+            session.rollback()
+            return
+        _, enabled_now = fresh
         vector.insert([
             VectorRow(
                 id=c.id,
@@ -130,10 +142,17 @@ def process_document(
                 page_number=c.page_number,
                 doc_id=doc.id,
                 kb_id=doc.kb_id,
-                enabled=doc.enabled,
+                enabled=enabled_now,
             )
             for c, v in zip(new_chunks, vectors)
         ])
+        # insert 后复查：删除落在现读与 insert 之间时，补偿清掉刚插入的向量
+        if session.execute(
+            select(Document.id).where(Document.id == doc_id)
+        ).first() is None:
+            vector.delete_by_doc(doc_id)
+            session.rollback()
+            return
         for c in new_chunks:
             c.vectorized = True
         doc.status = DocumentStatus.VECTORIZING
@@ -150,10 +169,28 @@ def process_document(
         session.commit()
     except Exception as e:  # 宽捕获转失败态（Task 8 移交裁定：管线兜底是本层责任）
         session.rollback()
-        doc = session.get(Document, doc_id)
-        doc.status = DocumentStatus.FAILED
-        doc.status_reason = (str(e) or type(e).__name__)[:_REASON_MAX_CHARS]
+        # identity-map 缓存不可信：session.get 命中已删行的缓存实例时，commit 会
+        # 触发 StaleDataError 逸出（终审 Critical #1 实证）。Core UPDATE 按主键
+        # 直改，rowcount 兼任存在性判定：行已消失 → 静默退出，绝不残留向量。
+        probe = session.execute(
+            select(Document.id).where(Document.id == doc_id)
+        ).first()
+        if probe is None:
+            # 处理期间行被 API 删除：无行可折叠，静默退出
+            return
+        result = session.execute(
+            update(Document)
+            .where(Document.id == doc_id)
+            .values(
+                status=DocumentStatus.FAILED,
+                status_reason=(str(e) or type(e).__name__)[:_REASON_MAX_CHARS],
+            )
+        )
         session.commit()
+        session.expire_all()  # Core 写绕过 ORM：过期本会话缓存，调用方读到真值
+        if result.rowcount == 0:
+            # 行在 probe 与 UPDATE 之间又被删：删除已收敛，无需补偿
+            return
 
 
 def run_pending(

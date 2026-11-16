@@ -8,6 +8,7 @@
 lifespan（Task 11）：init_db → 补齐真实 embedder/vector → vector.ensure_collection
 → worker_enabled 时起 start_worker 守护线程。
 """
+import threading
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ from app.api.kb import router as kb_router
 from app.core.config import Settings, get_settings
 from app.core.db import init_db, make_engine, make_session_factory
 from app.core.storage import LocalDiskStorage, StorageClient
+from app.models import Document, DocumentStatus
 from app.services.embedding import create_embedder
 from app.services.vector import create_vector
 from app.workers import start_worker
@@ -25,13 +27,31 @@ from app.workers import start_worker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """startup：建表 → 未注入处补真实 embedder/vector → 确保向量 collection → 起 worker。"""
+    """startup：建表 → 复位卡死态 → 未注入处补真实 embedder/vector → 确保向量 collection → 起 worker。"""
     init_db(app.state.engine)
+    # 进程可能死于处理中途（OOM/热重载）：2–5 是无主瞬态，复位为 1 恢复操作面
+    # （spec §6.1「失败可重试」覆盖软异常，此处兜进程级中断；终审 Important #4）
+    with app.state.session_factory() as session:
+        session.query(Document).filter(Document.status.in_((
+            DocumentStatus.PARSING,
+            DocumentStatus.EXTRACTED,
+            DocumentStatus.CHUNKED,
+            DocumentStatus.VECTORIZING,
+        ))).update(
+            {
+                Document.status: DocumentStatus.UPLOADED,
+                Document.status_reason: "进程重启中断，自动重排",
+            },
+            synchronize_session=False,
+        )
+        session.commit()
     if app.state.embedder is None:
         app.state.embedder = create_embedder(app.state.settings)
     if app.state.vector is None:
         app.state.vector = create_vector(app.state.settings)
     app.state.vector.ensure_collection()
+    worker_stop: threading.Event | None = None
+    worker_thread: threading.Thread | None = None
     if app.state.settings.worker_enabled:
         deps = SimpleNamespace(
             storage=app.state.storage,
@@ -39,8 +59,16 @@ async def lifespan(app: FastAPI):
             vector=app.state.vector,
             settings=app.state.settings,
         )
-        start_worker(app.state.session_factory, deps, app.state.settings.worker_interval_sec)
+        worker_stop = threading.Event()
+        worker_thread = start_worker(
+            app.state.session_factory, deps, app.state.settings.worker_interval_sec,
+            stop=worker_stop,
+        )
     yield
+    # 优雅停机：置位 + join，缩短 worker 半途窗口（daemon 兜底仍在）
+    if worker_stop is not None:
+        worker_stop.set()
+        worker_thread.join(timeout=5)
 
 
 def create_app(

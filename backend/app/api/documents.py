@@ -226,6 +226,9 @@ def patch_document_enabled(
     「库侧停用、向量仍可检索」的脏窗。
     """
     doc = _get_doc_or_404(db, doc_id)
+    if doc.status in _PROCESSING_STATUSES:
+        # set_doc_enabled 对无行文档是空操作，处理中翻标志会被 worker 过期值覆盖（终审 Important #2）
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="文档处理中，不可启停")
     vector.set_doc_enabled(doc_id, payload.enabled)
     doc.enabled = payload.enabled
     db.commit()
@@ -243,6 +246,9 @@ def delete_document(
     """删除文档（红线 3 顺序钉死）：Milvus → chunk 行 → doc 行（同事务提交）
     → 存储对象最后（source 与 content.md；提交后删，失败只留无害孤儿对象）。"""
     doc = _get_doc_or_404(db, doc_id)
+    if doc.status in _PROCESSING_STATUSES:
+        # DELETE 与 worker 竞争会产生孤儿可搜向量（终审 Critical #1 API 侧闸）
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="文档处理中，暂不可删除")
     oss_key = doc.oss_key
     vector.delete_by_doc(doc_id)
     db.query(Chunk).filter(Chunk.document_id == doc_id).delete(synchronize_session=False)

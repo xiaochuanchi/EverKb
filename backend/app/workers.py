@@ -4,19 +4,29 @@
 interval 用 stop.wait 休眠（置位即醒，不硬睡）。生产由 lifespan 按
 settings.worker_enabled 启动；测试可直接调 start_worker 传自己的 stop Event。
 """
+import logging
 import threading
 
 from app.services.pipeline import run_pending
 
+logger = logging.getLogger("everkb.worker")
+
 
 def worker_loop(session_factory, deps, interval: float, stop: threading.Event) -> None:
-    """处理循环：每轮调一次 run_pending，stop 置位即退。"""
+    """处理循环：每轮调一次 run_pending，stop 置位即退。
+
+    基础设施异常（MySQL 瞬断等）只记日志不退出——线程静默死亡 = 队列
+    永久停摆（终审 Important #3）；下一轮轮询自愈。
+    """
     while not stop.is_set():
-        run_pending(
-            session_factory,
-            storage=deps.storage, embedder=deps.embedder,
-            vector=deps.vector, settings=deps.settings,
-        )
+        try:
+            run_pending(
+                session_factory,
+                storage=deps.storage, embedder=deps.embedder,
+                vector=deps.vector, settings=deps.settings,
+            )
+        except Exception:
+            logger.exception("worker 轮询失败，下一轮重试")
         stop.wait(interval)
 
 

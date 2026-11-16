@@ -5,7 +5,7 @@
 import pytest
 from pymupdf import open as pdf_open
 
-from app.models import Chunk, DocumentStatus, SourceType
+from app.models import Chunk, Document, DocumentStatus, SourceType
 from app.services.pipeline import content_key_for, process_document, run_pending
 from tests.conftest import make_docx_bytes
 
@@ -330,3 +330,108 @@ def test_embed_batching_follows_settings_batch_size(
     assert len(rows) == 2
     assert [len(c) for c in calls] == [1, 1]  # batch_size=1 → 逐条一批
     assert pipeline_env.vector._rows[rows[0].id].chunk_text == rows[0].content  # 向量对位正确
+
+
+# ── 并发删除/启停竞争（Task 11 终审 Critical #1 / Important #2）────────
+
+
+def _purge_doc(factory, doc_id: int) -> None:
+    """另一会话模拟 API DELETE 全序列：chunk 行 + doc 行提交删除。"""
+    with factory() as s:
+        s.query(Chunk).filter(Chunk.document_id == doc_id).delete(synchronize_session=False)
+        doc = s.get(Document, doc_id)
+        if doc is not None:
+            s.delete(doc)
+        s.commit()
+
+
+def test_doc_deleted_during_embed_aborts_cleanly(pipeline_env, make_document, seed_source):
+    """DELETE 落在 embedding 阶段：insert 前现读守卫拦截，绝不插入孤儿向量。"""
+    doc = make_document()
+    doc_id = doc.id  # process_document 的 rollback 会过期实例，先捕获整数 id
+    seed_source(doc, make_docx_bytes([("标题", ["正文内容" * 50])]))
+    env = pipeline_env
+    original_embed = env.embedder.embed
+
+    def embed_then_delete(texts):
+        _purge_doc(env.factory, doc_id)  # DELETE 在 embed 期间完成
+        return original_embed(texts)
+
+    env.embedder.embed = embed_then_delete
+    # 不得抛（fold-7 兜底也不得对已删行崩 AttributeError）
+    process_document(
+        env.session, doc_id,
+        storage=env.storage, embedder=env.embedder, vector=env.vector, settings=env.settings,
+    )
+    assert env.vector.count_by_doc(doc_id) == 0
+    with env.factory() as s:
+        assert s.get(Document, doc_id) is None
+        assert s.query(Chunk).filter(Chunk.document_id == doc_id).count() == 0
+
+
+def test_doc_deleted_after_insert_compensates_vector(pipeline_env, make_document, seed_source):
+    """DELETE 落在 insert 与复查之间：insert 后补偿清向量，删除收敛。"""
+    doc = make_document()
+    doc_id = doc.id  # process_document 的 rollback 会过期实例，先捕获整数 id
+    seed_source(doc, make_docx_bytes([("标题", ["正文内容" * 50])]))
+    env = pipeline_env
+    original_insert = env.vector.insert
+
+    def insert_then_api_delete(rows):
+        original_insert(rows)            # worker 刚插入向量
+        _purge_doc(env.factory, doc_id)  # DELETE 紧随其后完成
+
+    env.vector.insert = insert_then_api_delete
+    process_document(
+        env.session, doc_id,
+        storage=env.storage, embedder=env.embedder, vector=env.vector, settings=env.settings,
+    )
+    assert env.vector.count_by_doc(doc_id) == 0
+    with env.factory() as s:
+        assert s.get(Document, doc_id) is None
+
+
+def test_fold7_tolerates_doc_deleted_midway(pipeline_env, make_document, seed_source):
+    """处理中行被删 + 业务异常同时发生：fold-7 静默退出，不崩 AttributeError。"""
+    doc = make_document()
+    doc_id = doc.id  # process_document 的 rollback 会过期实例，先捕获整数 id
+    seed_source(doc, make_docx_bytes([("标题", ["正文内容" * 50])]))
+    env = pipeline_env
+    original_embed = env.embedder.embed
+
+    def embed_then_delete_and_raise(texts):
+        _purge_doc(env.factory, doc_id)
+        raise RuntimeError("embed 阶段基础设施故障")
+
+    env.embedder.embed = embed_then_delete_and_raise
+    process_document(
+        env.session, doc_id,
+        storage=env.storage, embedder=env.embedder, vector=env.vector, settings=env.settings,
+    )
+    with env.factory() as s:
+        assert s.get(Document, doc_id) is None
+    assert env.vector.count_by_doc(doc_id) == 0
+
+
+def test_enabled_flipped_during_processing_takes_effect(pipeline_env, make_document, seed_source):
+    """PATCH enabled 落在 embedding 阶段：insert 现读 enabled，停用即生效。"""
+    doc = make_document()
+    doc_id = doc.id  # process_document 的 rollback 会过期实例，先捕获整数 id
+    seed_source(doc, make_docx_bytes([("标题", ["正文内容" * 50])]))
+    env = pipeline_env
+    original_embed = env.embedder.embed
+
+    def embed_then_disable(texts):
+        with env.factory() as s:  # 模拟 API PATCH enabled 的 MySQL 侧提交
+            s.get(Document, doc_id).enabled = False
+            s.commit()
+        return original_embed(texts)
+
+    env.embedder.embed = embed_then_disable
+    process_document(
+        env.session, doc_id,
+        storage=env.storage, embedder=env.embedder, vector=env.vector, settings=env.settings,
+    )
+    rows = [r for r in env.vector._rows.values() if r.doc_id == doc_id]
+    assert rows
+    assert all(r.enabled is False for r in rows)

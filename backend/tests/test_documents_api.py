@@ -11,6 +11,7 @@ import pytest
 
 from fastapi.testclient import TestClient
 
+from app.core.db import init_db
 from app.core.storage import LocalDiskStorage
 from app.main import create_app
 from app.models import Chunk, Document, DocumentStatus, SourceType
@@ -331,3 +332,79 @@ def test_worker_loop_processes_and_stops(client):
     stop.set()
     t.join(timeout=2)
     assert not t.is_alive()
+
+
+# ── Task 11 终审修复：处理中状态守卫 / worker 韧性 / 启动复位 ────────
+
+
+def test_delete_rejects_processing_state_and_allows_queued(client):
+    kb_id = _kb(client)
+    doc_id = _upload(client, kb_id).json()["id"]
+    _set_status(client, doc_id, DocumentStatus.CHUNKED)
+    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 409
+    _set_status(client, doc_id, DocumentStatus.UPLOADED)
+    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 204
+
+
+def test_patch_enabled_rejects_processing_state_409(client):
+    doc_id = _upload(client, _kb(client)).json()["id"]
+    _set_status(client, doc_id, DocumentStatus.VECTORIZING)
+    r = client.patch(f"{BASE}/documents/{doc_id}/enabled", json={"enabled": False})
+    assert r.status_code == 409
+    with client.app.state.session_factory() as s:
+        assert s.get(Document, doc_id).enabled is True  # 未被翻
+    assert client.app.state.vector.set_enabled_calls == []  # 未触 Milvus
+
+
+def test_worker_loop_survives_infra_failure(monkeypatch, caplog):
+    """基础设施异常（MySQL 瞬断）只记日志：线程必须存活继续轮询。"""
+    import logging
+
+    calls = []
+
+    def flaky_run_pending(factory, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("mysql 瞬断")
+        return 0
+
+    monkeypatch.setattr("app.workers.run_pending", flaky_run_pending)
+    deps = SimpleNamespace(storage=None, embedder=None, vector=None, settings=None)
+    stop = threading.Event()
+    with caplog.at_level(logging.ERROR, logger="everkb.worker"):
+        t = start_worker(object(), deps, 0.01, stop=stop)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and len(calls) < 2:
+            time.sleep(0.01)
+        stop.set()
+        t.join(timeout=2)
+    assert len(calls) >= 2  # 首轮崩了仍继续轮询
+    assert not t.is_alive()
+    assert any("worker 轮询失败" in r.message for r in caplog.records)
+
+
+def test_startup_resets_stuck_processing_statuses(tmp_path):
+    """进程重启后 2–5 是无主瞬态：lifespan 复位为 1，排队文档不受影响。"""
+    settings = make_test_settings(tmp_path)
+    app = create_app(
+        settings,
+        storage=LocalDiskStorage(root=str(tmp_path / "storage")),
+        embedder=FakeEmbedder(dim=8),
+        vector=FakeVector(dim=8),
+    )
+    init_db(app.state.engine)  # lifespan 前手动建表以预置卡死行
+    with app.state.session_factory() as s:
+        s.add(Document(kb_id=1, name="卡在切块", status=DocumentStatus.CHUNKED))
+        s.add(Document(kb_id=1, name="卡在向量化", status=DocumentStatus.VECTORIZING))
+        s.add(Document(kb_id=1, name="正常排队", status=DocumentStatus.UPLOADED))
+        s.commit()
+    with TestClient(app):
+        with app.state.session_factory() as s:
+            stuck1 = s.query(Document).filter(Document.name == "卡在切块").one()
+            stuck2 = s.query(Document).filter(Document.name == "卡在向量化").one()
+            queued = s.query(Document).filter(Document.name == "正常排队").one()
+    assert stuck1.status == DocumentStatus.UPLOADED
+    assert "重启" in (stuck1.status_reason or "")
+    assert stuck2.status == DocumentStatus.UPLOADED
+    assert queued.status == DocumentStatus.UPLOADED
+    assert queued.status_reason is None
