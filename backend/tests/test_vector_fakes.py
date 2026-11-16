@@ -43,7 +43,7 @@ def test_search_orders_by_score_and_respects_top_k():
     v.insert([_row(1, _vec(1, 0)), _row(2, _vec(1, 1)), _row(3, _vec(0, 1))])
     hits = v.search(Q, kb_ids=[1], top_k=2)
     assert [h.chunk_id for h in hits] == [1, 2]  # 按分数降序取 top_k
-    assert hits[0].score > hits[1].score >= hits[1].score
+    assert hits[0].score > hits[1].score
     assert hits[1].score == pytest.approx(math.cos(math.pi / 4))
     assert len(v.search(Q, kb_ids=[1], top_k=10)) == 3
 

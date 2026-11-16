@@ -15,6 +15,8 @@ from app.core.config import get_settings  # noqa: E402
 from app.services.vector import VectorRow, create_vector  # noqa: E402
 
 VERIFY_DOC_ID = 999_999_999  # 验证哨兵 doc，结束后整删，不污染真实数据
+VERIFY_KB_ID = 999_999_998  # 哨兵 kb：与真实知识库 id 空间隔离
+VERIFY_IDS = (999_999_999_001, 999_999_999_002, 999_999_999_003)  # pk 哨兵段，避免与真实 chunk id 碰撞
 
 
 def _main() -> int:
@@ -36,35 +38,36 @@ def _main() -> int:
     vec_c = [0.0] * dim
     vec_c[2] = 1.0
     rows = [
-        VectorRow(id=1, vector=vec_a, chunk_text="同向 chunk", page_number=1,
-                  doc_id=VERIFY_DOC_ID, kb_id=1, enabled=True),
-        VectorRow(id=2, vector=vec_b, chunk_text="斜向 chunk", page_number=2,
-                  doc_id=VERIFY_DOC_ID, kb_id=1, enabled=True),
-        VectorRow(id=3, vector=vec_c, chunk_text="正交 chunk", page_number=None,
-                  doc_id=VERIFY_DOC_ID, kb_id=1, enabled=True),
+        VectorRow(id=VERIFY_IDS[0], vector=vec_a, chunk_text="同向 chunk", page_number=1,
+                  doc_id=VERIFY_DOC_ID, kb_id=VERIFY_KB_ID, enabled=True),
+        VectorRow(id=VERIFY_IDS[1], vector=vec_b, chunk_text="斜向 chunk", page_number=2,
+                  doc_id=VERIFY_DOC_ID, kb_id=VERIFY_KB_ID, enabled=True),
+        VectorRow(id=VERIFY_IDS[2], vector=vec_c, chunk_text="正交 chunk", page_number=None,
+                  doc_id=VERIFY_DOC_ID, kb_id=VERIFY_KB_ID, enabled=True),
     ]
     client.insert(rows)
+    client.insert(rows)  # 幂等重插：pk 覆盖语义，行数必须保持 3（重复即 FAIL）
 
     try:
         # 3) search：top3 按分数降序；kb 过滤与阈值生效
-        hits = client.search(query, kb_ids=[1], top_k=3)
-        assert [h.chunk_id for h in hits] == [1, 2, 3], f"排序异常：{[h.chunk_id for h in hits]}"
+        hits = client.search(query, kb_ids=[VERIFY_KB_ID], top_k=3)
+        assert [h.chunk_id for h in hits] == list(VERIFY_IDS), f"排序异常：{[h.chunk_id for h in hits]}"
         assert hits[0].score > 0.99 and hits[2].score < 0.01, \
             f"分数异常：{[h.score for h in hits]}"
         assert hits[2].page_number is None, "nullable page_number 未按 None 取回"
-        filtered = client.search(query, kb_ids=[1], top_k=3, threshold=0.5)
-        assert [h.chunk_id for h in filtered] == [1, 2], f"阈值过滤异常：{filtered}"
-        assert client.search(query, kb_ids=[2], top_k=3) == [], "kb 过滤失效"
+        filtered = client.search(query, kb_ids=[VERIFY_KB_ID], top_k=3, threshold=0.5)
+        assert [h.chunk_id for h in filtered] == list(VERIFY_IDS[:2]), f"阈值过滤异常：{filtered}"
+        assert client.search(query, kb_ids=[VERIFY_KB_ID + 1], top_k=3) == [], "kb 过滤失效"
         print(f"search 命中：scores={[round(h.score, 4) for h in hits]}")
 
         # 4) set_doc_enabled：整文档停用后不可见，恢复后可见
         client.set_doc_enabled(VERIFY_DOC_ID, False)
-        assert client.search(query, kb_ids=[1], top_k=3) == [], "停用后仍可命中"
+        assert client.search(query, kb_ids=[VERIFY_KB_ID], top_k=3) == [], "停用后仍可命中"
         client.set_doc_enabled(VERIFY_DOC_ID, True)
-        assert len(client.search(query, kb_ids=[1], top_k=3)) == 3, "恢复后未命中"
+        assert len(client.search(query, kb_ids=[VERIFY_KB_ID], top_k=3)) == 3, "恢复后未命中"
 
         # 5) delete_by_ids / delete_by_doc + count 清零
-        client.delete_by_ids([3])
+        client.delete_by_ids([VERIFY_IDS[2]])
         assert client.count_by_doc(VERIFY_DOC_ID) == 2, "按 id 删除未生效"
         client.delete_by_doc(VERIFY_DOC_ID)
         assert client.count_by_doc(VERIFY_DOC_ID) == 0, "按 doc 删除后仍有残留"

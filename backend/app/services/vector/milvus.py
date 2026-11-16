@@ -48,7 +48,9 @@ class MilvusVectorClient:
     def insert(self, rows: list[VectorRow]) -> None:
         if not rows:
             return
-        self._client.insert(self._collection, data=[self._to_entity(r) for r in rows])
+        # upsert 而非 insert：pk = MySQL chunk.id，行不可变——同 id 重插必须覆盖
+        # 而非追加重复实体（Fake 同语义；plain insert 在 Milvus 会双实体共搜）
+        self._client.upsert(self._collection, data=[self._to_entity(r) for r in rows])
 
     def search(
         self,
