@@ -111,3 +111,61 @@ def test_openai_embedder_no_retry_on_4xx():
         emb.embed(["一条"])
 
     assert calls["n"] == 1  # 401 类不可重试错误立即抛出
+
+
+def test_transport_error_retries_then_succeeds():
+    # 终审 Critical #1：连接失败/超时等网络层异常同样退避重试（embedding POST 幂等）
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("boom")
+        body = json.loads(request.content)
+        return httpx.Response(200, json={"data": [
+            {"embedding": [float(len(t))] * 4, "index": i} for i, t in enumerate(body["input"])
+        ]})
+
+    emb = OpenAIEmbedder("https://x/v1", "key", "m", dim=4, max_retries=3, transport=httpx.MockTransport(handler))
+    assert emb.embed(["一条"]) == [[2.0] * 4]
+    assert calls["n"] == 2
+
+
+def test_transport_error_raises_after_exhaustion():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ReadTimeout("slow")
+
+    emb = OpenAIEmbedder("https://x/v1", "key", "m", dim=4, max_retries=1, transport=httpx.MockTransport(handler))
+    with pytest.raises(EmbeddingError):
+        emb.embed(["一条"])
+    assert calls["n"] == 2  # 首次 + 1 次重试；耗尽后转 EmbeddingError
+
+
+@pytest.mark.parametrize("body", [
+    {},                                                     # 缺 data 键
+    [],                                                     # JSON 是数组
+    {"data": [{"embedding": "abcd", "index": 0},            # 字符串向量，len 恰好 == dim，旧校验放行
+              {"embedding": [1.0] * 4, "index": 1}]},
+    {"data": [{"embedding": [1.0] * 3, "index": 0},         # 维度不符
+              {"embedding": [2.0] * 4, "index": 1}]},
+    {"data": [{"embedding": [1.0] * 4, "index": 0},         # index 重复
+              {"embedding": [2.0] * 4, "index": 0}]},
+    {"data": [{"embedding": [1.0] * 4, "index": 0}]},       # 条数不符（2 条输入只回 1 条）
+])
+def test_malformed_200_raises_embedding_error(body):
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=body))
+    emb = OpenAIEmbedder("https://x/v1", "key", "m", dim=4, transport=transport)
+    with pytest.raises(EmbeddingError):
+        emb.embed(["一条", "两条"])
+
+
+def test_embed_empty_input_no_network():
+    # 终审 Important #3 附带：空输入短路，不打网络（钉住既有行为）
+    captured: list[dict] = []
+    transport, calls = _mock_endpoint(captured)
+    emb = OpenAIEmbedder("https://x/v1", "key", "m", dim=4, transport=transport)
+    assert emb.embed([]) == []
+    assert calls["n"] == 0

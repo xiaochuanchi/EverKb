@@ -45,27 +45,50 @@ class OpenAIEmbedder:
     def _embed_batch(self, batch: list[str]) -> list[list[float]]:
         payload = {"model": self.model, "input": batch, "dimensions": self.dim}
         attempt = 0
-        while True:
-            with httpx.Client(transport=self.transport, timeout=_REQUEST_TIMEOUT_SEC) as client:
-                resp = client.post(
-                    f"{self.base_url}/embeddings",
-                    json=payload,
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                )
-            if resp.status_code == 200:
-                return self._parse(resp, len(batch))
-            if resp.status_code in _RETRY_STATUSES and attempt < self.max_retries:
+
+        def backoff_and_retry() -> bool:
+            nonlocal attempt
+            if attempt < self.max_retries:
                 time.sleep(_BACKOFF_BASE_SEC * (2 ** attempt))
                 attempt += 1
-                continue
-            raise EmbeddingError(f"embedding 请求失败：HTTP {resp.status_code} {resp.text[:200]}")
+                return True
+            return False
+
+        with httpx.Client(transport=self.transport, timeout=_REQUEST_TIMEOUT_SEC) as client:
+            while True:
+                try:
+                    resp = client.post(
+                        f"{self.base_url}/embeddings",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {self.api_key}"},
+                    )
+                except httpx.HTTPError as e:  # 网络层失败（连接/超时/重置）同样退避重试
+                    if backoff_and_retry():
+                        continue
+                    raise EmbeddingError(f"embedding 网络失败：{type(e).__name__}: {e}") from e
+                if resp.status_code == 200:
+                    try:
+                        return self._parse(resp, len(batch))
+                    except (KeyError, TypeError, ValueError) as e:  # 畸形 200 一律转 EmbeddingError
+                        raise EmbeddingError(f"embedding 响应格式非法：{type(e).__name__}: {e}") from e
+                if resp.status_code in _RETRY_STATUSES and backoff_and_retry():
+                    continue
+                raise EmbeddingError(f"embedding 请求失败：HTTP {resp.status_code} {resp.text[:200]}")
 
     def _parse(self, resp: httpx.Response, batch_len: int) -> list[list[float]]:
         data = sorted(resp.json()["data"], key=lambda item: item["index"])
         if len(data) != batch_len:
             raise EmbeddingError(f"embedding 返回条数不符：要 {batch_len} 条，得 {len(data)} 条")
-        vectors = [item["embedding"] for item in data]
-        bad = next((len(v) for v in vectors if len(v) != self.dim), None)
-        if bad is not None:
-            raise EmbeddingError(f"embedding 维度不符：期望 {self.dim}，实际 {bad}")
+        if [item["index"] for item in data] != list(range(batch_len)):
+            raise EmbeddingError("embedding 返回 index 不连续或重复")
+        vectors: list[list[float]] = []
+        for item in data:
+            vec = item["embedding"]
+            if (
+                not isinstance(vec, list)
+                or len(vec) != self.dim
+                or not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in vec)
+            ):
+                raise EmbeddingError(f"embedding 向量非法：期望 {self.dim} 维数值数组")
+            vectors.append([float(x) for x in vec])
         return vectors
