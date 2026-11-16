@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>易记知识库（EverKB）- 开源知识库管理工具</title>
+  <meta name="description" content="易记知识库（EverKB）是一个开源的知识库管理工具，专注知识库长期运营：文档生命周期管理、检索调优、问答全链路可观测。">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+      color: #2c3e50;
+      background: #ffffff;
+      line-height: 1.7;
+    }
+    a { color: #2563eb; text-decoration: none; }
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+    /* 顶部导航 */
+    header {
+      border-bottom: 1px solid #e5e7eb;
+      background: #ffffff;
+    }
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 64px;
+    }
+    .logo { font-size: 20px; font-weight: 700; color: #111827; }
+    .logo span { color: #2563eb; }
+
+    /* 首屏 */
+    .hero {
+      padding: 96px 0 72px;
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      text-align: center;
+    }
+    .hero h1 { font-size: 40px; font-weight: 700; margin-bottom: 20px; letter-spacing: 1px; }
+    .hero p.sub {
+      font-size: 18px;
+      color: #64748b;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+    .badge {
+      display: inline-block;
+      background: #eff6ff;
+      color: #2563eb;
+      font-size: 14px;
+      padding: 4px 14px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+    .dev-status {
+      display: inline-block;
+      margin-top: 28px;
+      padding: 10px 24px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 999px;
+      color: #92400e;
+      font-size: 15px;
+    }
+
+    /* 通用区块 */
+    section { padding: 64px 0; }
+    section.alt { background: #f8fafc; }
+    h2 { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 12px; }
+    .sec-desc { text-align: center; color: #64748b; margin-bottom: 48px; }
+
+    /* 特性卡片 */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 28px 24px;
+    }
+    section.alt .card { background: #ffffff; }
+    .card h3 { font-size: 18px; margin-bottom: 10px; }
+    .card p { font-size: 14px; color: #64748b; }
+    .card .icon { font-size: 28px; margin-bottom: 14px; }
+
+    /* 定位对比 */
+    .positioning {
+      max-width: 720px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 32px;
+      font-size: 15px;
+      color: #475569;
+    }
+    .positioning strong { color: #111827; }
+
+    /* 路线图 */
+    .timeline { max-width: 720px; margin: 0 auto; }
+    .timeline li {
+      list-style: none;
+      position: relative;
+      padding-left: 32px;
+      padding-bottom: 24px;
+      border-left: 2px solid #e5e7eb;
+      margin-left: 8px;
+    }
+    .timeline li:last-child { border-left: 2px solid transparent; padding-bottom: 0; }
+    .timeline li::before {
+      content: "";
+      position: absolute;
+      left: -8px;
+      top: 4px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #2563eb;
+    }
+    .timeline h3 { font-size: 16px; margin-bottom: 4px; }
+    .timeline p { font-size: 14px; color: #64748b; }
+
+    /* 页脚 */
+    footer {
+      border-top: 1px solid #e5e7eb;
+      padding: 40px 0;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+    footer p { margin-bottom: 6px; }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 30px; }
+      .hero { padding: 64px 0 48px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container nav">
+      <div class="logo">Ever<span>KB</span></div>
+      <div style="color:#64748b;font-size:14px;">易记知识库 · 开源知识库管理工具</div>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="container">
+      <div class="badge">开源项目 · Apache-2.0 许可证</div>
+      <h1>让企业知识库长期"不腐烂"</h1>
+      <p class="sub">
+        易记知识库（EverKB）是一个开源的知识库管理工具，基于大语言模型检索增强生成技术，
+        帮助团队将文档资料转化为可智能问答的知识库，并提供文档生命周期管理与问答全链路可观测能力。
+      </p>
+      <p class="dev-status">
+        🚧 本产品目前正在规划与开发中，功能将持续完善，敬请期待。
+      </p>
+    </div>
+  </div>
+
+  <section>
+    <div class="container">
+      <h2>产品介绍</h2>
+      <p class="sec-desc">上传文档或网页链接，自动完成解析、切块、向量化入库，即可对外提供带引用来源的智能问答服务</p>
+      <div class="grid">
+        <div class="card">
+          <div class="icon">📄</div>
+          <h3>多格式文档解析</h3>
+          <p>支持 Word、PDF、Excel 文件上传与网页链接抓取，自动解析为结构化 Markdown 内容并建立知识索引，全程状态跟踪、失败可重试。</p>
+        </div>
+        <div class="card">
+          <div class="icon">💬</div>
+          <h3>智能问答服务</h3>
+          <p>基于检索增强生成技术，回答问题时自动引用来源文档与页码，让每个答案可追溯、可验证，避免 AI 凭空编造。</p>
+        </div>
+        <div class="card">
+          <div class="icon">📊</div>
+          <h3>全链路可观测</h3>
+          <p>内置问答链路追踪能力，完整记录每次问答的检索、生成各步骤的耗时、Token 用量与调用明细，问题定位一目了然。</p>
+        </div>
+        <div class="card">
+          <div class="icon">🔁</div>
+          <h3>文档生命周期管理</h3>
+          <p>提供文档替换、重新解析、在线编辑与版本管理能力，结合用户反馈闭环，持续治理知识库内容质量，避免知识库"越用越差"。</p>
+        </div>
+        <div class="card">
+          <div class="icon">🔌</div>
+          <h3>灵活的模型接入</h3>
+          <p>兼容主流大模型服务接入协议，支持配置不同的大语言模型与向量模型，企业可按需选择，私有化部署数据不出内网。</p>
+        </div>
+        <div class="card">
+          <div class="icon">🐳</div>
+          <h3>一键私有化部署</h3>
+          <p>采用容器化方案一键部署，支持本地磁盘与多种对象存储，适合企业内部知识管理与团队协作场景。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="container">
+      <h2>产品定位</h2>
+      <p class="sec-desc">不止于"建知识库"，更关注知识库的长期运营质量</p>
+      <div class="positioning">
+        <p>
+          现有的知识库工具大多聚焦于<strong>接入期</strong>——上传文档、创建机器人、开始问答。
+          而 EverKB 关注的是<strong>运营期</strong>：知识库长期运行后的内容质量治理与问答效果保障。
+          文档过期腐烂可以治理，回答质量下降可以定位，问答链路步骤可以观测，
+          且观测能力原生内置，无需依赖外部第三方服务。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>发展路线</h2>
+      <p class="sec-desc">项目目前处于规划开发阶段，将以开源方式持续演进，采取开源核心 + 商业增值的模式</p>
+      <ul class="timeline">
+        <li>
+          <h3>第一阶段 · 核心平台 <span style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:1px 10px;margin-left:6px;">规划开发中</span></h3>
+          <p>文档解析入库管线、智能问答服务、管理后台与链路追踪查看器，发布开源版本。</p>
+        </li>
+        <li>
+          <h3>第二阶段 · 能力增强</h3>
+          <p>智能体编排引擎、混合检索、扫描件文字识别、问答效果量化评测等能力。</p>
+        </li>
+        <li>
+          <h3>第三阶段 · 企业版本</h3>
+          <p>面向企业客户提供单点登录、细粒度权限、审计日志、统计报表等增值模块，以私有化部署为主要交付形态。</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="alt" style="padding: 56px 0;">
+    <div class="container" style="text-align:center;">
+      <h2 style="margin-bottom:16px;">联系我们</h2>
+      <p style="color:#64748b;">
+        本网站用于介绍 EverKB 开源项目的产品信息。<br>
+        如需了解项目详情、获取源代码或进行商务合作，欢迎通过邮件与我们联系：
+        <strong>contact@example.com</strong>
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>© 2026 易记知识库（EverKB） · 开源知识库管理工具</p>
+      <p><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备XXXXXXXX号-1</a></p>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,84 @@
+# everkb 本机开发环境：中间件编排（MySQL + Milvus + Redis）
+#
+# 用法：
+#   docker compose up -d        # 首次会自动拉取镜像
+#   docker compose ps           # 查看运行状态
+#   docker compose logs -f milvus
+#   docker compose down         # 停止（保留数据卷）
+#   docker compose down -v      # 停止并删除全部数据（一键重置）
+#
+# 说明：
+#   - MySQL 映射到宿主机 3307（避开本机 brew MySQL 占用的 3306）
+#   - Milvus 采用官方 standalone_embed.sh 同款方案：内置 etcd（ETCD_USE_EMBED）
+#     + 本地文件存储（COMMON_STORAGETYPE=local），不依赖外部 etcd/MinIO
+#     （MinIO 官方已于 2025-10 停发社区 Docker 镜像，此为官方推荐替代路径）
+#   - 应用代码（FastAPI/Vue）不在 compose 里，本地直接跑
+#   - 本文件与部署期 ECS 上使用的保持同一套镜像版本（dev = prod）
+
+services:
+  mysql:
+    image: mysql:8.0.42
+    container_name: everkb-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: everkb
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  milvus:
+    image: milvusdb/milvus:v2.5.6
+    container_name: everkb-milvus
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      # 内置 etcd：数据落在 /var/lib/milvus/etcd，随数据卷持久化
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      COMMON_STORAGETYPE: local
+    ports:
+      - "127.0.0.1:19530:19530"   # gRPC（pymilvus 连这个）
+      - "127.0.0.1:9091:9091"     # metrics/健康检查
+    volumes:
+      - milvus_data:/var/lib/milvus
+      - ./embedEtcd.yaml:/milvus/configs/embedEtcd.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      start_period: 90s
+      retries: 3
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: everkb-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data:
+  milvus_data:
+  redis_data:
