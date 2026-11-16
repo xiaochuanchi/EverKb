@@ -1,5 +1,6 @@
 """Pydantic 请求/响应模型（Plan 1 Task 3 起；admin/open 两侧共用本模块）。"""
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,7 +17,7 @@ class KBPatch(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=512)
-    status: int | None = None
+    status: Literal[0, 1] | None = None  # 域对齐 models.KBStatus：越域 422，不静默落库
 
 
 class KBOut(BaseModel):

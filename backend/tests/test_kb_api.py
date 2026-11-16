@@ -107,3 +107,29 @@ def test_patch_rename_race_maps_integrity_error_to_409(client, monkeypatch):
     monkeypatch.setattr("app.api.kb._name_taken", lambda *a, **k: False)
     r = client.patch(f"{BASE}/{kb_id}", json={"name": "被撞的库"})
     assert r.status_code == 409
+
+
+# ── 终审 deferred minors 转正（2026-11-16）────────────────────────
+
+
+def test_patch_status_out_of_domain_422(client):
+    """status 域为 {0, 1}（KBStatus）：越域值 422，绝不静默落库。"""
+    kb_id = _create(client, "限域库").json()["id"]
+    r = client.patch(f"{BASE}/{kb_id}", json={"status": 42})
+    assert r.status_code == 422
+
+
+def test_create_name_validation_edges(client):
+    """空名 / 超长名（>128）→ 422（pydantic 长度约束，锁定既有行为）。"""
+    assert client.post(BASE, json={"name": ""}).status_code == 422
+    assert client.post(BASE, json={"name": "字" * 129}).status_code == 422
+
+
+def test_patch_rename_to_fresh_name_and_description(client):
+    """正向路径：改名到新名 + 改描述均生效。"""
+    kb_id = _create(client, "旧名库", description="旧描述").json()["id"]
+    r = client.patch(f"{BASE}/{kb_id}", json={"name": "新名库", "description": "新描述"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "新名库"
+    assert body["description"] == "新描述"
