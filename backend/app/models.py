@@ -21,9 +21,27 @@
    （不含 api_key/base_url，避免密钥复制扩散）；
 8. app.name 加唯一约束，与 knowledge_base.name 对齐。
 
+2026-11-16 三次修订（review 后）：
+9. created_at / updated_at 改 MySQL TIMESTAMP，库端自动维护——created_at
+   DEFAULT CURRENT_TIMESTAMP；updated_at 另加 ON UPDATE CURRENT_TIMESTAMP
+   （DDL 子句经 AutoUpdateTimestamp 自定义编译注入，仅 mysql 方言）。
+   命名确认保持 created_at/updated_at（不改 create_at/update_at），列注释
+   统一为 创建时间/修改时间；onupdate=func.now() 保留，维持 ORM 对象值
+   同步；SQLite 测试库经 with_variant 回落 DateTime，行为不变。
+
+2026-11-16 四次修订（review 后）：
+10. trace_span 新增 start_time / end_time（TIMESTAMP(3) 毫秒精度，非空）——
+    只有时长没有时刻时，时间轴视图无法摆位，id 完成序在二期 Agent 并行
+    场景会排错；根 span 的 start_time 兼作「问题到达时刻」（qa_record.created_at
+    是流结束写库时刻，答不了）。latency_ms 保留为物化冗余，聚合免
+    TIMESTAMPDIFF。展示顺序 = 按 start_time 摆位 + parent_span_id 成树。
+    纪律：时长用单调钟测、时刻用墙钟记；流结束后批量落库；观测写库
+    失败 try/except 包死，绝不打断问答。锁定测试：
+    test_trace_span_time_columns_on_mysql。
+
 通用约定：
 - 主键 BIGINT 自增；SQLite 测试库降级为 INTEGER（rowid 别名，否则不回填 id）；
-- 时间戳 DATETIME + 库端默认（func.now），可变表配 updated_at onupdate；
+- 时间戳 TIMESTAMP + 库端自动维护（见三次修订 9），可变表配 updated_at；
 - 状态类字段用 SmallInteger（MySQL TINYINT）+ 本模块常量，不存字符串；
 - MySQL JSON 字段用通用 JSON 类型，SQLite 测试库自动降级为 TEXT；
 - 不加物理外键（决策 4），关联完整性由 services 层保证。
@@ -44,13 +62,37 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
+from sqlalchemy.dialects.mysql import TIMESTAMP as MySQLTIMESTAMP
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
 # BIGINT 主键在 SQLite 下必须渲染为 INTEGER 才能成为 rowid 别名并自动回填 id
 ID_PK = BigInteger().with_variant(Integer(), "sqlite")
+
+
+# ── 时间戳列（2026-11-16 三次修订：MySQL TIMESTAMP + 库端自动维护）────
+
+
+class AutoUpdateTimestamp(MySQLTIMESTAMP):
+    """MySQL TIMESTAMP，编译时追加 ON UPDATE CURRENT_TIMESTAMP 子句。
+
+    仅注册 mysql 方言；SQLite 经 with_variant 回落 DateTime，测试库行为不变。
+    """
+
+
+@compiles(AutoUpdateTimestamp, "mysql")
+def _render_auto_update_timestamp(element, compiler, **kw):
+    return "TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+
+
+# 类型对象可跨表共享：DEFAULT 子句由列级 server_default 提供（两种方言均合法）
+CREATED_AT = DateTime().with_variant(MySQLTIMESTAMP(), "mysql")
+UPDATED_AT = DateTime().with_variant(AutoUpdateTimestamp(), "mysql")
+TIMESTAMP_MS = DateTime().with_variant(MySQLTIMESTAMP(fsp=3), "mysql")  # 毫秒精度时刻（span 起止）
 
 
 # ── 状态常量（状态机与技术决策记录对齐）──────────────────────────
@@ -111,10 +153,10 @@ class AdminUser(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="False = 禁止登录")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（库端默认）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间（自动刷新）"
+        UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
     )
 
 
@@ -134,10 +176,10 @@ class KnowledgeBase(Base):
         SmallInteger, default=KBStatus.ENABLED, comment="1 启用 / 0 停用（停用 = 整库不参与检索）"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（库端默认）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间（自动刷新）"
+        UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
     )
 
 
@@ -182,10 +224,10 @@ class Document(Base):
     edited: Mapped[bool] = mapped_column(Boolean, default=False, comment="content.md 是否被人工编辑过")
     uploaded_by: Mapped[str] = mapped_column(String(64), default="", comment="上传人（管理后台账号名）")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（库端默认）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间（自动刷新）"
+        UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
     )
 
 
@@ -216,7 +258,7 @@ class Chunk(Base):
     token_count: Mapped[int] = mapped_column(Integer, default=0, comment="token 数")
     vectorized: Mapped[bool] = mapped_column(Boolean, default=False, comment="True = 向量已在 Milvus（对账漂移扫描依据）")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（行不可变，无 updated_at）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
 
 
@@ -247,10 +289,10 @@ class App(Base):
         JSON, default=dict, comment="运行时模型配置 base_url/api_key/model 等（明文存储；admin API 读取时须脱敏）"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（库端默认）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间（自动刷新）"
+        UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
     )
 
 
@@ -297,7 +339,7 @@ class QaRecord(Base):
         SmallInteger, default=Feedback.NONE, comment="用户反馈：0 未反馈 / 1 满意 / -1 不满意"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（追加不可变，反馈字段除外）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
 
 
@@ -323,11 +365,13 @@ class TraceSpan(Base):
     )
     input_summary: Mapped[Optional[str]] = mapped_column(Text, comment="输入摘要（截断存储，防大字段）")
     output_summary: Mapped[Optional[str]] = mapped_column(Text, comment="输出摘要（截断存储，防大字段）")
-    latency_ms: Mapped[int] = mapped_column(Integer, default=0, comment="本步耗时（毫秒）")
+    start_time: Mapped[datetime] = mapped_column(TIMESTAMP_MS, comment="开始时刻（毫秒精度；时间轴零点 = 根 span 的本字段）")
+    end_time: Mapped[datetime] = mapped_column(TIMESTAMP_MS, comment="结束时刻（毫秒精度）")
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, comment="本步耗时（毫秒，物化冗余，聚合免 TIMESTAMPDIFF）")
     gen_ai_usage_tokens_in: Mapped[Optional[int]] = mapped_column(Integer, comment="输入 token 数（GenAI 语义规范）")
     gen_ai_usage_tokens_out: Mapped[Optional[int]] = mapped_column(Integer, comment="输出 token 数（GenAI 语义规范）")
     cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6), comment="本步花费")
     extra: Mapped[Optional[dict]] = mapped_column(JSON, comment="各 span_type 私有扩展字段")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), comment="创建时间（追加不可变）"
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )

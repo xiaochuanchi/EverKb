@@ -4,8 +4,11 @@ SQLite 内存库（红线 3：测试不出网）。真实 MySQL 建表验证走
 `docker exec everkb-mysql mysql ... SHOW TABLES`（infra plan I4）。
 """
 import pytest
+from datetime import datetime, timedelta
 from sqlalchemy import inspect
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.schema import CreateTable
 
 from app import models
 from app.core.db import Base, init_db, make_engine, make_session_factory
@@ -74,7 +77,15 @@ def test_full_chain_insert_and_defaults(session):
     session.flush()
     assert qa.grounded and qa.feedback == models.Feedback.NONE
 
-    root = TraceSpan(trace_id=qa.id, name="qa.root", span_type="llm", latency_ms=120)
+    t0 = datetime(2026, 11, 16, 12, 0, 0)
+    root = TraceSpan(
+        trace_id=qa.id,
+        name="qa.root",
+        span_type="llm",
+        start_time=t0,
+        end_time=t0 + timedelta(milliseconds=120),
+        latency_ms=120,
+    )
     session.add(root)
     session.flush()  # 先回填 root.id，子 span 才能引用
     child = TraceSpan(
@@ -82,6 +93,8 @@ def test_full_chain_insert_and_defaults(session):
         parent_span_id=root.id,
         name="gen_ai.chat",
         span_type=models.SpanType.LLM,
+        start_time=t0 + timedelta(milliseconds=120),
+        end_time=t0 + timedelta(milliseconds=218),
         latency_ms=98,
         gen_ai_usage_tokens_in=812,
         gen_ai_usage_tokens_out=233,
@@ -143,3 +156,57 @@ def test_tables_and_columns_have_comments():
         assert table.comment, f"表 {table.name} 缺表注释"
         for column in table.columns:
             assert column.comment, f"{table.name}.{column.name} 缺列注释"
+
+
+def _mysql_ddl_lines():
+    """对 mysql 方言离线编译各表 DDL（不出网），返回 {表名: {列名: DDL 行}}。
+
+    方言编译器对安全的小写标识符不加反引号（引号是 MySQL 服务端行为），
+    故按"行首列名 + 空格"匹配列行。
+    """
+    out = {}
+    for table in Base.metadata.sorted_tables:
+        ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
+        lines = {}
+        for line in ddl.splitlines():
+            stripped = line.strip()
+            for col in table.columns:
+                if stripped.startswith(f"{col.name} "):
+                    lines[col.name] = stripped
+        out[table.name] = lines
+    return out
+
+
+def test_timestamp_columns_on_mysql():
+    """2026-11-16 三次修订：时间戳列落 MySQL TIMESTAMP + 库端自动维护。
+
+    created_at → timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at → 同上 + ON UPDATE CURRENT_TIMESTAMP（可变表才有）
+    SQLite 方言经 with_variant 回落 DateTime，行为不变（其余测试守护）。
+    """
+    for table, lines in _mysql_ddl_lines().items():
+        assert "created_at" in lines, f"{table} 缺 created_at"
+        created = lines["created_at"].upper()
+        assert "TIMESTAMP" in created, f"{table}.created_at 不是 TIMESTAMP：{created}"
+        assert "DEFAULT CURRENT_TIMESTAMP" in created, f"{table}.created_at 缺库端默认：{created}"
+
+        if "updated_at" not in lines:
+            continue
+        updated = lines["updated_at"].upper()
+        assert "TIMESTAMP" in updated, f"{table}.updated_at 不是 TIMESTAMP：{updated}"
+        assert "DEFAULT CURRENT_TIMESTAMP" in updated, f"{table}.updated_at 缺库端默认：{updated}"
+        assert "ON UPDATE CURRENT_TIMESTAMP" in updated, f"{table}.updated_at 缺自动更新子句：{updated}"
+
+
+def test_trace_span_time_columns_on_mysql():
+    """2026-11-16 四次修订：trace_span 补 start_time/end_time，支撑时间轴视图。
+
+    只有时长没有时刻，时间轴不知道横条画在哪、id 完成序在二期并行场景会排错。
+    精度必须毫秒（fsp=3）：秒精度 TIMESTAMP 会把 45ms 噪声化成 0。
+    """
+    lines = _mysql_ddl_lines()["trace_span"]
+    for col in ("start_time", "end_time"):
+        assert col in lines, f"trace_span 缺 {col} 列"
+        ddl = lines[col].upper()
+        assert "TIMESTAMP(3)" in ddl, f"{col} 非毫秒精度 TIMESTAMP(3)：{lines[col]}"
+        assert "NOT NULL" in ddl, f"{col} 应为 NOT NULL：{lines[col]}"
