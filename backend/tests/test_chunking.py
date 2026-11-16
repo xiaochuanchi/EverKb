@@ -4,6 +4,8 @@
 - 「三段各 300 字」段内不带句读 → 缓冲 300→600→900 才超 target，恰 flush 一次
 - 「两段各 400 字」段内每 100 字一句 → 缓冲中途超 target，产生携带重叠的第二 chunk
 """
+import pytest
+
 from app.services.chunking import ChunkDraft, chunk_markdown, estimate_tokens
 
 
@@ -64,3 +66,33 @@ def test_index_continuous():
 def test_estimate_tokens():
     assert estimate_tokens("中文abc") == 5
     assert estimate_tokens("") == 0
+
+
+def test_overlap_zero_no_snowball():
+    # 回归（终审 Critical #1）：overlap=0 时 s[-0:] 会把整个已 flush chunk 当 carry，
+    # chunk 逐个膨胀（雪球）。要求 overlap=0 合法且 chunk 尺寸有界。
+    chunks = chunk_markdown("# 长节\n" + "句子。" * 400, target=600, overlap=0)
+    assert len(chunks) >= 2
+    assert all(len(c.content) <= 700 for c in chunks)
+
+
+def test_table_flush_suppresses_row_duplication():
+    # 回归（终审 Important #2）：flush 由表格块触发时 carry 不得携带表行尾巴，
+    # 否则下一 chunk 复制 ~3 行表格行（行数 != 原行数，且是无头中段碎片）。
+    rows = ["|字" * 10 for _ in range(200)]  # 200 行 × 20 字符 = 4000 字符表
+    md = "引言文字。\n" + "\n".join(rows) + "\n表格后的正文。"
+    chunks = chunk_markdown(md, target=600)
+    table_lines = [ln for c in chunks for ln in c.content.split("\n") if ln.startswith("|")]
+    assert len(table_lines) == 200
+    assert set(table_lines) == set(rows)
+
+
+def test_rejects_degenerate_params():
+    # 回归（终审 Important #3）：退化参数（target<=0、overlap 越界）显式报错，
+    # 不允许静默产出上千个碎片 chunk。
+    with pytest.raises(ValueError):
+        chunk_markdown("文本。", target=0)
+    with pytest.raises(ValueError):
+        chunk_markdown("文本。", target=600, overlap=600)
+    with pytest.raises(ValueError):
+        chunk_markdown("文本。", target=600, overlap=-1)

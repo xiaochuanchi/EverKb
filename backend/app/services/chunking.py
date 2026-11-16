@@ -8,6 +8,8 @@
 - 单句超 target×2 硬切：片长 target、片间重叠 overlap，各片独立成 chunk
 - chunk.content 首行为所属最近标题行（若正文首行不是该标题）；
   page_number 取开段前最近的 page 标记
+
+参数约束：target > 0 且 0 <= overlap < target，越界抛 ValueError（Task 10 接配置前挡住退化值）。
 """
 import re
 from dataclasses import dataclass
@@ -122,7 +124,7 @@ def _pack_section(
                 piece = unit[pos:pos + target]
                 emit(piece)  # 硬切片各自成 chunk，片间自带 overlap 重叠
                 last = piece
-            carry = last.rstrip()[-overlap:]
+            carry = last.rstrip()[-overlap:] if overlap > 0 else ""  # 防 s[-0:] 取整串
             pending = carry
             after_block = False
             continue
@@ -132,13 +134,16 @@ def _pack_section(
         after_block = is_table
         if len(pending) > target:  # 缓冲超 target 且非空 → flush
             emit(pending)
-            carry = pending.rstrip()[-overlap:]
+            # 表尾不携带（表行跨 chunk 重复违背表格验收口径）；overlap=0 时防 s[-0:] 取整串
+            carry = "" if after_block or overlap <= 0 else pending.rstrip()[-overlap:]
             pending = carry
     if pending and pending != carry:  # 段尾收口：仅剩 carry 时不成 chunk
         emit(pending)
 
 
 def chunk_markdown(md: str, target: int = 600, overlap: int = 60) -> list[ChunkDraft]:
+    if target <= 0 or not (0 <= overlap < target):
+        raise ValueError(f"非法切块参数：target={target}, overlap={overlap}（要求 target>0 且 0<=overlap<target）")
     chunks: list[str] = []
     pages: list[int | None] = []
     for section in _scan_sections(md):
