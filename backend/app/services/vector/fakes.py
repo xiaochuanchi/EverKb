@@ -17,6 +17,8 @@ class FakeVector:
     def __init__(self, dim: int = 1024) -> None:
         self.dim = dim
         self._rows: dict[int, VectorRow] = {}
+        # 测试观察点：delete_by_ids 实际收到的 id（替换语义「精准清旧」断言用）
+        self.deleted_ids: list[int] = []
 
     def ensure_collection(self) -> None:
         pass  # 内存实现无表可建
@@ -53,6 +55,7 @@ class FakeVector:
         self._rows = {rid: r for rid, r in self._rows.items() if r.doc_id != doc_id}
 
     def delete_by_ids(self, ids: list[int]) -> None:
+        self.deleted_ids.extend(ids)
         for rid in ids:
             self._rows.pop(rid, None)
 
