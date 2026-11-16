@@ -41,7 +41,12 @@ def settings(tmp_path) -> Settings:
 @pytest.fixture()
 def client(tmp_path, settings) -> TestClient:
     storage = LocalDiskStorage(root=str(tmp_path / "storage"))
-    app = create_app(settings, storage=storage)
+    app = create_app(
+        settings,
+        storage=storage,
+        embedder=FakeEmbedder(dim=8),
+        vector=FakeVector(dim=8),
+    )
     with TestClient(app) as c:
         yield c
 

@@ -19,6 +19,9 @@ class FakeVector:
         self._rows: dict[int, VectorRow] = {}
         # 测试观察点：delete_by_ids 实际收到的 id（替换语义「精准清旧」断言用）
         self.deleted_ids: list[int] = []
+        # 测试观察点（Task 11）：delete_by_doc / set_doc_enabled 实际收到的调用
+        self.deleted_doc_ids: list[int] = []
+        self.set_enabled_calls: list[tuple[int, bool]] = []
 
     def ensure_collection(self) -> None:
         pass  # 内存实现无表可建
@@ -52,6 +55,7 @@ class FakeVector:
         return hits
 
     def delete_by_doc(self, doc_id: int) -> None:
+        self.deleted_doc_ids.append(doc_id)
         self._rows = {rid: r for rid, r in self._rows.items() if r.doc_id != doc_id}
 
     def delete_by_ids(self, ids: list[int]) -> None:
@@ -60,6 +64,7 @@ class FakeVector:
             self._rows.pop(rid, None)
 
     def set_doc_enabled(self, doc_id: int, enabled: bool) -> None:
+        self.set_enabled_calls.append((doc_id, enabled))
         for r in self._rows.values():
             if r.doc_id == doc_id:
                 r.enabled = enabled
