@@ -6,6 +6,7 @@
 """
 from fastapi import FastAPI
 
+from app.api.kb import router as kb_router
 from app.core.config import Settings, get_settings
 from app.core.db import init_db, make_engine, make_session_factory
 from app.core.storage import LocalDiskStorage, StorageClient
@@ -37,7 +38,8 @@ def create_app(
     # if settings.worker_enabled: start_worker(...)
 
     # ── 路由注册（Task 3 起逐步挂载 admin/open 两组）────────────
-    # app.include_router(admin_router, prefix="/api/v1/admin")
+    # admin 侧统一挂 /api/v1/admin 前缀（技术决策记录：支撑部署层 IP 白名单）
+    app.include_router(kb_router, prefix="/api/v1/admin")
     # app.include_router(open_router, prefix="/api/v1")
 
     @app.get("/health")
