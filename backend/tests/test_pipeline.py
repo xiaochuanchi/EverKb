@@ -175,6 +175,136 @@ def test_run_pending_processes_uploaded_and_isolates_failures(
     assert done.status == DocumentStatus.COMPLETED  # 已完成不被重跑
 
 
+def test_precleanup_failure_folds_to_7(
+    pipeline_env, make_document, seed_source, process_doc, monkeypatch
+):
+    """前导清残留失败（如 Milvus 宕机）→ 折叠 status=7 + reason，异常不逸出（Important #1）。
+
+    契约（模块 docstring）：任一步异常 → 7。若 delete_by_doc 在 try 外抛出，
+    异常会逸出 process_document 且文档永远卡在 status=1。
+    """
+    doc = make_document()
+    seed_source(doc, make_docx_bytes([("标题", ["正常正文内容。"])]))
+
+    def _boom(doc_id: int) -> None:
+        raise RuntimeError("milvus unavailable")
+
+    monkeypatch.setattr(pipeline_env.vector, "delete_by_doc", _boom)
+    process_doc(doc.id)  # 异常必须被折叠，不得逸出
+
+    assert doc.status == DocumentStatus.FAILED
+    assert "milvus unavailable" in (doc.status_reason or "")
+
+
+def test_embedder_failure_retry_closes_loop(
+    pipeline_env, make_document, seed_source, process_doc, monkeypatch
+):
+    """真实中间态失败注入（红线 4，Important #2）：向量化阶段 embedder 崩 → 7 且
+    chunk 行残留（status=4 已提交）；retry（7→1，Task 11 语义）清残留后从头执行成功。"""
+    doc = make_document()
+    seed_source(doc, make_docx_bytes([("甲节", ["内容甲。"]), ("乙节", ["内容乙。"])]))
+    real_embed = pipeline_env.embedder.embed
+    failed = {"once": False}
+
+    def _flaky(texts):
+        if not failed["once"]:
+            failed["once"] = True
+            raise RuntimeError("embedding api 503")
+        return real_embed(texts)
+
+    monkeypatch.setattr(pipeline_env.embedder, "embed", _flaky)
+    process_doc(doc.id)
+
+    # 失败折叠：status=7，chunk 行残留（红线 4 的真实中间态，非手工预置）
+    assert doc.status == DocumentStatus.FAILED
+    leftover = _chunk_rows(pipeline_env, doc.id)
+    assert len(leftover) == 2 and all(not r.vectorized for r in leftover)
+    assert pipeline_env.vector.count_by_doc(doc.id) == 0  # 向量未入库
+
+    # retry：Task 11 将 7 置回 1（version 不动）；embedder 已恢复（flaky 只崩一次）
+    doc.status = DocumentStatus.UPLOADED
+    pipeline_env.session.commit()
+    process_doc(doc.id)
+
+    assert doc.status == DocumentStatus.COMPLETED
+    rows = _chunk_rows(pipeline_env, doc.id)
+    assert len(rows) == 2  # 残留已清，无重复行
+    assert all(r.vectorized for r in rows)
+    assert pipeline_env.vector.count_by_doc(doc.id) == 2
+    assert doc.chunk_count == 2
+
+
+def test_replace_old_vectors_served_until_new_inserted(
+    pipeline_env, make_document, seed_source, process_doc, monkeypatch
+):
+    """替换期间不断供（spec §6.1，Important #3）：清旧被调时新向量必须已在库、
+    旧向量仍在线——钉死「先插新后删旧」顺序，防挪动顺序后测试静默全绿。"""
+    doc = make_document()
+    seed_source(doc, make_docx_bytes([("初版", ["初版内容。"])]))
+    process_doc(doc.id)
+    old_ids = [r.id for r in _chunk_rows(pipeline_env, doc.id)]
+    assert doc.status == DocumentStatus.COMPLETED
+
+    seed_source(doc, make_docx_bytes([
+        ("新版一", ["新版内容一。"]), ("新版二", ["新版内容二。"]),
+    ]))
+    doc.version = 2
+    doc.status = DocumentStatus.UPLOADED
+    pipeline_env.session.commit()
+
+    real_delete = pipeline_env.vector.delete_by_ids
+    seen: dict[str, bool] = {}
+
+    def _spy(ids):
+        new_rows = [r for r in _chunk_rows(pipeline_env, doc.id) if r.id not in set(old_ids)]
+        seen["new_ready"] = bool(new_rows) and all(
+            r.id in pipeline_env.vector._rows for r in new_rows
+        )
+        seen["old_still_serving"] = all(oid in pipeline_env.vector._rows for oid in old_ids)
+        return real_delete(ids)
+
+    monkeypatch.setattr(pipeline_env.vector, "delete_by_ids", _spy)
+    process_doc(doc.id)
+
+    assert doc.status == DocumentStatus.COMPLETED
+    assert seen.get("new_ready") is True  # 删旧前新向量已可检索（先插后删）
+    assert seen.get("old_still_serving") is True  # 删旧动作发生时旧向量一直在线
+
+
+def test_embedder_count_mismatch_fails_loudly(
+    pipeline_env, make_document, seed_source, process_doc, monkeypatch
+):
+    """embedder 返回向量数与切块数不符 → 响亮失败 7（Minor #4）：zip 静默截断
+    会造成「部分 chunk 无向量仍标记完成」，必须拒绝。"""
+    doc = make_document()
+    seed_source(doc, make_docx_bytes([("甲节", ["内容甲。"]), ("乙节", ["内容乙。"])]))
+    real_embed = pipeline_env.embedder.embed
+
+    def _short(texts):
+        return real_embed(texts)[:-1]  # 少返一条，模拟上游缺行
+
+    monkeypatch.setattr(pipeline_env.embedder, "embed", _short)
+    process_doc(doc.id)
+
+    assert doc.status == DocumentStatus.FAILED
+    assert "向量" in (doc.status_reason or "") and "2" in (doc.status_reason or "")
+    assert pipeline_env.vector.count_by_doc(doc.id) == 0  # 截断数据未入库
+
+
+def test_empty_document_fails_loudly(pipeline_env, make_document, seed_source, process_doc):
+    """空内容文档（解析 ok 但 0 切块）→ 响亮失败 7（Minor #5）：静默完成
+    （status=6 + chunk_count=0）会污染 KB 且用户无感知。"""
+    doc = make_document()
+    seed_source(doc, make_docx_bytes([]))  # 空 docx：解析 ok、md 为空、0 切块
+
+    process_doc(doc.id)
+
+    assert doc.status == DocumentStatus.FAILED
+    assert "空" in (doc.status_reason or "")
+    assert _chunk_rows(pipeline_env, doc.id) == []
+    assert pipeline_env.vector.count_by_doc(doc.id) == 0
+
+
 def test_embed_batching_follows_settings_batch_size(
     pipeline_env, make_document, seed_source, process_doc, monkeypatch
 ):

@@ -5,6 +5,9 @@
   + html 快照）→ parser.parse → md 落存储 status=3 → chunk_markdown 插行 status=4
   → 分批 embed → vector.insert → vectorized status=5 → [替换收尾：按 old_ids 清旧]
   → chunk_count、status=6 提交。任一步异常：status=7 + reason（截 500 字）。
+  前导（模式判定/清残留）同样在 try 内：Milvus 宕机等前导故障也折叠为 7，
+  未提交的清理动作随 rollback 撤销。空文档（0 切块）与 embed 返回数
+  不符 → PipelineError，同样折叠为 7，绝不静默完成。
 
 幂等与替换语义（红线 2/4，模式判定见 _is_replace）：
   - 未完成过（非替换进入）：开头清残留 chunk 行 + vector.delete_by_doc 后从头执行
@@ -26,7 +29,7 @@ _REASON_MAX_CHARS = 500  # status_reason 列 String(512)，异常摘要截 500 �
 
 
 class PipelineError(Exception):
-    """管线业务失败（如解析 ok=False）；消息原样写入 document.status_reason。"""
+    """管线业务失败（解析 ok=False / 空文档 / 向量数不符）；消息原样写入 status_reason。"""
 
 
 def content_key_for(oss_key: str) -> str:
@@ -48,20 +51,22 @@ def process_document(
     if doc is None:
         raise ValueError(f"文档不存在：doc_id={doc_id}")
 
-    # ── 模式判定（进入时一次性读取）──────────────────────────────
-    is_replace = _is_replace(session, doc)
-    old_ids: list[int] = []
-    if is_replace:
-        # 已有完成版本：先记录旧 ids，成功后精准清旧（红线 2）
-        old_ids = [
-            rid for (rid,) in session.query(Chunk.id).filter(Chunk.document_id == doc_id)
-        ]
-    else:
-        # 未完成过：开头清残留（红线 4，spec §6.1「开头清理后从头执行」）
-        session.query(Chunk).filter(Chunk.document_id == doc_id).delete()
-        vector.delete_by_doc(doc_id)
-
     try:
+        # ── 模式判定（进入时一次性读取；前导失败同样折叠为 7，不逸出）──
+        is_replace = _is_replace(session, doc)
+        old_ids: list[int] = []
+        if is_replace:
+            # 已有完成版本：先记录旧 ids，成功后精准清旧（红线 2）
+            old_ids = [
+                rid for (rid,) in session.query(Chunk.id).filter(Chunk.document_id == doc_id)
+            ]
+        else:
+            # 未完成过：开头清残留（红线 4，spec §6.1「开头清理后从头执行」）；
+            # 在 try 内执行——delete_by_doc 崩（如 Milvus 宕机）→ rollback + 折叠 7，
+            # 未提交的 chunk 批量 DELETE 一并回滚，不留半开事务给调用方
+            session.query(Chunk).filter(Chunk.document_id == doc_id).delete()
+            vector.delete_by_doc(doc_id)
+
         doc.status = DocumentStatus.PARSING
         session.commit()
 
@@ -85,6 +90,10 @@ def process_document(
         drafts = chunk_markdown(
             md, target=settings.chunk_target_chars, overlap=settings.chunk_overlap_chars
         )
+        if not drafts:
+            # 空文档响亮失败（Minor #5 裁定）：与扫描件/空网页同形态 → 7，
+            # 拒绝 status=6 + 0 chunk 静默完成污染 KB
+            raise PipelineError("文档内容为空：解析成功但无可切块内容")
         new_chunks = [
             Chunk(
                 document_id=doc.id,
@@ -107,6 +116,12 @@ def process_document(
         batch = max(1, settings.embedding_batch_size)  # 防 0/负值零步长（Task 8 遗留点，接配置处守卫）
         for i in range(0, len(texts), batch):
             vectors.extend(embedder.embed(texts[i : i + batch]))
+        if len(vectors) != len(texts):
+            # 响亮失败守卫（Minor #4）：zip 会静默截断，缺向量的 chunk 照常
+            # 标记 vectorized 完成——拒绝（与「失败要响」先例一致）
+            raise PipelineError(
+                f"向量化返回数与切块数不符：{len(vectors)} != {len(texts)}"
+            )
         vector.insert([
             VectorRow(
                 id=c.id,
@@ -177,7 +192,9 @@ def _is_replace(session: Session, doc: Document) -> bool:
     - 进入时 status==6：直接对完成态文档重跑（计划原文路径）。
     - 进入时 status==1 且 version>1：Task 11 PUT /file（替换）已覆盖 source、
       version+1、status 置回 1——旧完成版 chunk 仍在库中，须保持供检索，
-      成功后按 ids 清旧；retry（7→1）不动 version，走清残留分支（红线 4）。
+      成功后按 ids 清旧。
+    - retry（7→1）不动 version：version==1 走清残留分支（红线 4）；
+      version>1 的替换失败 retry 仍走替换分支，保旧版持续供检索。
     """
     if doc.status == DocumentStatus.COMPLETED:
         return True
