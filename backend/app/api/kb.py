@@ -5,6 +5,7 @@ JWT 鉴权属 Task 14——当前由部署层 IP 白名单兜底（技术决策�
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -12,6 +13,15 @@ from app.models import Document, KnowledgeBase
 from app.schemas import KBCreate, KBOut, KBPatch
 
 router = APIRouter(prefix="/kbs", tags=["知识库"])
+
+
+def _commit_or_409(db: Session) -> None:
+    """check-then-write 窗口的并发同名由唯一约束兜底（IntegrityError → 409 而非 500）。"""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="知识库名已存在") from None
 
 
 def _get_or_404(db: Session, kb_id: int) -> KnowledgeBase:
@@ -35,7 +45,7 @@ def create_kb(payload: KBCreate, db: Session = Depends(get_db)) -> KnowledgeBase
         raise HTTPException(status.HTTP_409_CONFLICT, detail="知识库名已存在")
     kb = KnowledgeBase(name=payload.name, description=payload.description)
     db.add(kb)
-    db.commit()
+    _commit_or_409(db)
     db.refresh(kb)  # 回填库端默认值（created_at）
     return kb
 
@@ -52,9 +62,10 @@ def patch_kb(kb_id: int, payload: KBPatch, db: Session = Depends(get_db)) -> Kno
     kb = _get_or_404(db, kb_id)
     if payload.name is not None and payload.name != kb.name and _name_taken(db, payload.name):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="知识库名已存在")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    # exclude_none：显式 null = 未提供（KBPatch 契约「未给的（None）不改」），否则落库 NOT NULL 必炸
+    for field, value in payload.model_dump(exclude_unset=True, exclude_none=True).items():
         setattr(kb, field, value)
-    db.commit()
+    _commit_or_409(db)
     db.refresh(kb)
     return kb
 

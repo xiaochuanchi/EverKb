@@ -72,3 +72,38 @@ def test_delete_kb_with_document_409(client):
     session.close()
     r = client.delete(f"{BASE}/{kb_id}")
     assert r.status_code == 409
+
+
+# ── 评审修复回归（2026-11-16 review）──────────────────────────────
+
+
+def test_patch_null_fields_are_ignored(client):
+    """显式 null = 未提供（schemas.KBPatch 契约「未给的（None）不改」），返回 200 原值。"""
+    kb_id = _create(client, "空值库", description="原描述").json()["id"]
+    r = client.patch(f"{BASE}/{kb_id}", json={"name": None, "description": None, "status": None})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "空值库"
+    assert body["description"] == "原描述"
+    assert body["status"] == KBStatus.ENABLED
+
+
+def test_create_name_race_maps_integrity_error_to_409(client, monkeypatch):
+    """check-then-write 窗口的并发同名由唯一约束兜底：409 而非 500。
+
+    单线程测试无法真实调度并发交错，用「已有同名行 + 预检查失明」等价制造
+    竞态结果——IntegrityError 由真实唯一约束抛出，被测的是映射而非约束本身。
+    """
+    _create(client, "竞态库")
+    monkeypatch.setattr("app.api.kb._name_taken", lambda *a, **k: False)
+    r = client.post(BASE, json={"name": "竞态库"})
+    assert r.status_code == 409
+
+
+def test_patch_rename_race_maps_integrity_error_to_409(client, monkeypatch):
+    """改名撞唯一约束（预检查窗口竞态）同样 409。"""
+    kb_id = _create(client, "改名的库").json()["id"]
+    _create(client, "被撞的库")
+    monkeypatch.setattr("app.api.kb._name_taken", lambda *a, **k: False)
+    r = client.patch(f"{BASE}/{kb_id}", json={"name": "被撞的库"})
+    assert r.status_code == 409
