@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFil
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.envelope import EnvelopeRoute
 from app.core.config import Settings
 from app.core.db import get_db
 from app.core.storage import StorageClient
@@ -18,7 +19,7 @@ from app.schemas import DocumentEnabledPatch, DocumentOut, DocumentPageOut, WebD
 from app.services.pipeline import content_key_for
 from app.services.vector import VectorClient
 
-router = APIRouter(tags=["文档"])
+router = APIRouter(tags=["文档"], route_class=EnvelopeRoute)
 
 # 处理中的状态（2–5）不可替换：与 worker 竞争写入同一文档会互相覆盖状态
 _PROCESSING_STATUSES = frozenset({
@@ -236,7 +237,7 @@ def patch_document_enabled(
     return doc
 
 
-@router.delete("/documents/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/documents/{doc_id}")
 def delete_document(
     doc_id: int,
     db: Session = Depends(get_db),

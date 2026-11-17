@@ -8,11 +8,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.envelope import EnvelopeRoute
 from app.core.db import get_db
 from app.models import Document, KnowledgeBase
 from app.schemas import KBCreate, KBOut, KBPatch
 
-router = APIRouter(prefix="/kbs", tags=["知识库"])
+router = APIRouter(prefix="/kbs", tags=["知识库"], route_class=EnvelopeRoute)
 
 
 def _commit_or_409(db: Session) -> None:
@@ -70,7 +71,7 @@ def patch_kb(kb_id: int, payload: KBPatch, db: Session = Depends(get_db)) -> Kno
     return kb
 
 
-@router.delete("/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{kb_id}")
 def delete_kb(kb_id: int, db: Session = Depends(get_db)) -> None:
     """删除知识库（仅空库可删；非空 409）。"""
     kb = _get_or_404(db, kb_id)

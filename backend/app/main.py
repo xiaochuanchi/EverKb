@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 
 from app.api.documents import router as documents_router
+from app.api.envelope import register_exception_handlers
 from app.api.kb import router as kb_router
 from app.core.config import Settings, get_settings
 from app.core.db import init_db, make_engine, make_session_factory
@@ -80,6 +81,7 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="EverKB API", version="0.1.0", lifespan=lifespan)
+    register_exception_handlers(app)  # 统一信封异常映射（docs/2026-11-17-api统一信封-设计文档.md）
     app.state.settings = settings
 
     # ── 基础设施 ────────────────────────────────────────────────

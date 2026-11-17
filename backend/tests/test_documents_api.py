@@ -25,7 +25,7 @@ BASE = "/api/v1/admin"
 
 
 def _kb(client, name: str = "文档库") -> int:
-    return client.post(f"{BASE}/kbs", json={"name": name}).json()["id"]
+    return client.post(f"{BASE}/kbs", json={"name": name}).json()["data"]["id"]
 
 
 def _upload(client, kb_id: int, filename: str = "测试.docx", data: bytes | None = None):
@@ -80,7 +80,7 @@ def test_upload_docx_happy_path(client):
     data = make_docx_bytes([("产品介绍", ["第一段", "第二段"])])
     r = _upload(client, kb_id, "产品手册.docx", data)
     assert r.status_code == 201
-    body = r.json()
+    body = r.json()["data"]
     assert body["status"] == DocumentStatus.UPLOADED
     assert body["source_type"] == SourceType.UPLOAD
     assert body["version"] == 1
@@ -125,7 +125,7 @@ def test_web_batch_creates_documents(client):
     urls = ["https://example.com/a", "https://example.com/b"]
     r = _web(client, kb_id, urls)
     assert r.status_code == 201
-    body = r.json()
+    body = r.json()["data"]
     assert len(body) == 2
     for doc, url in zip(body, urls):
         assert doc["source_type"] == SourceType.WEBPAGE
@@ -147,29 +147,29 @@ def test_web_batch_over_limit_422(client):
 
 
 def test_get_document_and_404(client):
-    doc_id = _upload(client, _kb(client)).json()["id"]
-    assert _doc(client, doc_id).json()["id"] == doc_id
+    doc_id = _upload(client, _kb(client)).json()["data"]["id"]
+    assert _doc(client, doc_id).json()["data"]["id"] == doc_id
     assert _doc(client, 999).status_code == 404
 
 
 def test_list_documents_filters_and_pagination(client):
     kb_id = _kb(client)
-    ids = [_upload(client, kb_id).json()["id"] for _ in range(3)]
+    ids = [_upload(client, kb_id).json()["data"]["id"] for _ in range(3)]
     _set_status(client, ids[0], DocumentStatus.FAILED, reason="解析失败")
 
-    body = client.get(f"{BASE}/kbs/{kb_id}/documents").json()
+    body = client.get(f"{BASE}/kbs/{kb_id}/documents").json()["data"]
     assert body["total"] == 3
     assert [d["id"] for d in body["items"]] == ids
 
-    p1 = client.get(f"{BASE}/kbs/{kb_id}/documents", params={"page": 1, "size": 2}).json()
-    p2 = client.get(f"{BASE}/kbs/{kb_id}/documents", params={"page": 2, "size": 2}).json()
+    p1 = client.get(f"{BASE}/kbs/{kb_id}/documents", params={"page": 1, "size": 2}).json()["data"]
+    p2 = client.get(f"{BASE}/kbs/{kb_id}/documents", params={"page": 2, "size": 2}).json()["data"]
     assert [d["id"] for d in p1["items"]] == ids[:2]
     assert [d["id"] for d in p2["items"]] == ids[2:]
     assert p2["total"] == 3
 
     failed = client.get(
         f"{BASE}/kbs/{kb_id}/documents", params={"status": DocumentStatus.FAILED}
-    ).json()
+    ).json()["data"]
     assert [d["id"] for d in failed["items"]] == [ids[0]]
 
 
@@ -177,11 +177,11 @@ def test_list_documents_filters_and_pagination(client):
 
 
 def test_retry_failed_document(client):
-    doc_id = _upload(client, _kb(client)).json()["id"]
+    doc_id = _upload(client, _kb(client)).json()["data"]["id"]
     _set_status(client, doc_id, DocumentStatus.FAILED, reason="解析失败：疑似扫描件")
     r = client.post(f"{BASE}/documents/{doc_id}/retry")
     assert r.status_code == 200
-    body = r.json()
+    body = r.json()["data"]
     assert body["status"] == DocumentStatus.UPLOADED
     assert body["status_reason"] is None
     with client.app.state.session_factory() as s:
@@ -189,7 +189,7 @@ def test_retry_failed_document(client):
 
 
 def test_retry_rejects_non_failed_and_missing(client):
-    doc_id = _upload(client, _kb(client)).json()["id"]
+    doc_id = _upload(client, _kb(client)).json()["data"]["id"]
     assert client.post(f"{BASE}/documents/{doc_id}/retry").status_code == 409  # status=1
     _set_status(client, doc_id, DocumentStatus.COMPLETED)
     assert client.post(f"{BASE}/documents/{doc_id}/retry").status_code == 409
@@ -200,17 +200,17 @@ def test_retry_rejects_non_failed_and_missing(client):
 
 
 def test_patch_enabled_syncs_vector(client):
-    doc_id = _upload(client, _kb(client)).json()["id"]
+    doc_id = _upload(client, _kb(client)).json()["data"]["id"]
     fake = client.app.state.vector
     r = client.patch(f"{BASE}/documents/{doc_id}/enabled", json={"enabled": False})
     assert r.status_code == 200
-    assert r.json()["enabled"] is False
+    assert r.json()["data"]["enabled"] is False
     assert fake.set_enabled_calls == [(doc_id, False)]
     with client.app.state.session_factory() as s:
         assert s.get(Document, doc_id).enabled is False
     assert client.patch(
         f"{BASE}/documents/{doc_id}/enabled", json={"enabled": True}
-    ).json()["enabled"] is True
+    ).json()["data"]["enabled"] is True
     assert fake.set_enabled_calls == [(doc_id, False), (doc_id, True)]
     assert client.patch(f"{BASE}/documents/999/enabled", json={"enabled": False}).status_code == 404
 
@@ -220,13 +220,13 @@ def test_patch_enabled_syncs_vector(client):
 
 def test_delete_document_full_cleanup(client):
     kb_id = _kb(client)
-    doc_id = _upload(client, kb_id).json()["id"]
+    doc_id = _upload(client, kb_id).json()["data"]["id"]
     st = client.app.state
     assert _run_pending(client) == 1
     with st.session_factory() as s:
         oss_key = s.get(Document, doc_id).oss_key
 
-    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 204
+    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 200
     assert doc_id in st.vector.deleted_doc_ids
     with st.session_factory() as s:
         assert s.query(Chunk).filter(Chunk.document_id == doc_id).count() == 0
@@ -243,7 +243,7 @@ def test_delete_document_full_cleanup(client):
 def test_delete_document_removes_vectors_first(client):
     """红线 3：Milvus 先行——vector.delete_by_doc 触发时刻 MySQL chunk 行仍在。"""
     kb_id = _kb(client)
-    doc_id = _upload(client, kb_id).json()["id"]
+    doc_id = _upload(client, kb_id).json()["data"]["id"]
     st = client.app.state
     assert _run_pending(client) == 1
 
@@ -258,7 +258,7 @@ def test_delete_document_removes_vectors_first(client):
         original(target_doc_id)
 
     st.vector.delete_by_doc = spy  # 实例属性覆盖（端点经 app.state.vector 取用）
-    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 204
+    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 200
     assert seen["chunk_rows_at_vector_delete"] > 0
 
 
@@ -269,7 +269,7 @@ def test_replace_put_file_keeps_old_content_md(client):
     kb_id = _kb(client)
     doc_id = _upload(
         client, kb_id, "第一版.docx", make_docx_bytes([("第一版标题", ["第一版正文"])])
-    ).json()["id"]
+    ).json()["data"]["id"]
     st = client.app.state
     assert _run_pending(client) == 1
     with st.session_factory() as s:
@@ -282,7 +282,7 @@ def test_replace_put_file_keeps_old_content_md(client):
         files={"file": ("第二版.docx", new_bytes, "application/octet-stream")},
     )
     assert r.status_code == 200
-    body = r.json()
+    body = r.json()["data"]
     assert body["version"] == 2
     assert body["status"] == DocumentStatus.UPLOADED
     assert st.storage.get_bytes(oss_key) == new_bytes  # source 已覆盖
@@ -292,11 +292,11 @@ def test_replace_put_file_keeps_old_content_md(client):
 
 def test_replace_rejects_processing_state_and_webpage(client):
     kb_id = _kb(client)
-    doc_id = _upload(client, kb_id).json()["id"]
+    doc_id = _upload(client, kb_id).json()["data"]["id"]
     files = {"file": ("新.docx", make_docx_bytes([("t", ["x"])], ), "application/octet-stream")}
     _set_status(client, doc_id, DocumentStatus.CHUNKED)
     assert client.put(f"{BASE}/documents/{doc_id}/file", files=files).status_code == 409
-    web_id = _web(client, kb_id, ["https://example.com/w"]).json()[0]["id"]
+    web_id = _web(client, kb_id, ["https://example.com/w"]).json()["data"][0]["id"]
     assert client.put(f"{BASE}/documents/{web_id}/file", files=files).status_code == 409
     assert client.put(f"{BASE}/documents/999/file", files=files).status_code == 404
 
@@ -314,7 +314,7 @@ def test_run_pending_processes_api_created_docs(client):
 
 
 def test_worker_loop_processes_and_stops(client):
-    doc_id = _upload(client, _kb(client)).json()["id"]
+    doc_id = _upload(client, _kb(client)).json()["data"]["id"]
     st = client.app.state
     deps = SimpleNamespace(
         storage=st.storage, embedder=st.embedder, vector=st.vector, settings=st.settings
@@ -339,15 +339,15 @@ def test_worker_loop_processes_and_stops(client):
 
 def test_delete_rejects_processing_state_and_allows_queued(client):
     kb_id = _kb(client)
-    doc_id = _upload(client, kb_id).json()["id"]
+    doc_id = _upload(client, kb_id).json()["data"]["id"]
     _set_status(client, doc_id, DocumentStatus.CHUNKED)
     assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 409
     _set_status(client, doc_id, DocumentStatus.UPLOADED)
-    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 204
+    assert client.delete(f"{BASE}/documents/{doc_id}").status_code == 200
 
 
 def test_patch_enabled_rejects_processing_state_409(client):
-    doc_id = _upload(client, _kb(client)).json()["id"]
+    doc_id = _upload(client, _kb(client)).json()["data"]["id"]
     _set_status(client, doc_id, DocumentStatus.VECTORIZING)
     r = client.patch(f"{BASE}/documents/{doc_id}/enabled", json={"enabled": False})
     assert r.status_code == 409

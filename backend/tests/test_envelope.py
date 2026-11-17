@@ -121,3 +121,45 @@ def test_unhandled_exception_returns_500_envelope():
     r = c.get("/boom")
     assert r.status_code == 500
     assert r.json() == {"code": 500, "message": "服务器内部错误", "data": None}
+
+
+# ── 真实接线契约（Task 2）────────────────────────────────────────
+
+
+def test_real_app_delete_returns_envelope(client):
+    kb_id = client.post("/api/v1/admin/kbs", json={"name": "删除信封库"}).json()["data"]["id"]
+    r = client.delete(f"/api/v1/admin/kbs/{kb_id}")
+    assert r.status_code == 200
+    assert r.json() == {"code": 0, "message": "ok", "data": None}
+
+
+def test_route_not_found_envelope(client):
+    """路由级 404（StarletteHTTPException）也走信封，不回落 {"detail": ...}。"""
+    r = client.get("/api/v1/admin/nonexistent")
+    assert r.status_code == 404
+    assert r.json() == {"code": 404, "message": "Not Found", "data": None}
+
+
+def test_health_stays_bare(client):
+    """探活端点豁免信封（route_class 不得污染 /health）。"""
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+def test_direct_constructed_route_envelopes():
+    """裸构造 EnvelopeRoute(path, endpoint)（无 kwargs，钉住 __init__ 的
+    response_class is None 缺省分支），注册进 mini-app 后成功响应同样包信封。
+    starlette 1.10 的 Router 无 .add 方法，routes.append 即其注册机制
+    （include_router 内部同款）。"""
+    app = FastAPI()
+    register_exception_handlers(app)
+
+    def ping() -> dict:
+        return {"pong": True}
+
+    app.router.routes.append(EnvelopeRoute("/ping", ping))
+    c = TestClient(app)
+    r = c.get("/ping")
+    assert r.status_code == 200
+    assert r.json() == {"code": 0, "message": "ok", "data": {"pong": True}}
