@@ -4,7 +4,7 @@ Task 1 用 mini-app 钉包裹语义与异常映射；Task 2 追加真实接线�
 红线 3：mini-app 不触网。
 """
 from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from fastapi.testclient import TestClient
 
@@ -34,6 +34,10 @@ def _mini_app() -> FastAPI:
     @router.get("/raw", response_class=PlainTextResponse)
     def raw() -> str:
         return "ok"
+
+    @router.get("/stream")
+    def stream() -> StreamingResponse:
+        return StreamingResponse(iter(["chunk1", "chunk2"]), media_type="text/plain")
 
     @router.get("/conflict")
     def conflict() -> dict:
@@ -77,6 +81,13 @@ def test_204_no_body_response_passes_through():
     r = c.delete("/gone")
     assert r.status_code == 204
     assert r.text == ""  # 无体响应原样放行：非信封、status 204、不抛错
+
+
+def test_streaming_response_passes_through():
+    c = TestClient(_mini_app())
+    r = c.get("/stream")
+    assert r.status_code == 200
+    assert r.text == "chunk1chunk2"  # 流式响应无 .body 属性，原样放行、非信封、不抛错
 
 
 def test_http_exception_envelope():

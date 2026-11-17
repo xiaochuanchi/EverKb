@@ -44,7 +44,9 @@ class EnvelopeRoute(APIRoute):
             response = await original_handler(request)
             # 204/304 等 body-not-allowed 状态码会被 FastAPI 清空 body，
             # 无体可包，原样放行（json.loads(b"") 会炸成 500 信封）。
-            if response.status_code in (204, 304) or not response.body:
+            # StreamingResponse/FileResponse/RedirectResponse 无 .body 属性，
+            # 用 getattr 容忍，避免 AttributeError 同样被吃成 500 信封。
+            if response.status_code in (204, 304) or not getattr(response, "body", None):
                 return response
             if not isinstance(response, JSONResponse):
                 return response
