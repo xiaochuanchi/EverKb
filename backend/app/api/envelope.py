@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.datastructures import DefaultPlaceholder
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -40,7 +40,7 @@ class EnvelopeRoute(APIRoute):
     def get_route_handler(self) -> Callable:
         original_handler = super().get_route_handler()
 
-        async def envelope_handler(request: Request) -> JSONResponse:
+        async def envelope_handler(request: Request) -> Response:
             response = await original_handler(request)
             # 204/304 等 body-not-allowed 状态码会被 FastAPI 清空 body，
             # 无体可包，原样放行（json.loads(b"") 会炸成 500 信封）。
@@ -53,6 +53,15 @@ class EnvelopeRoute(APIRoute):
             return JSONResponse(
                 status_code=response.status_code,
                 content={"code": 0, "message": "ok", "data": json.loads(response.body)},
+                # 透传端点设置的自定义 headers（Set-Cookie / Link 分页等）；
+                # content-length 必剔（新 body 长度不同），content-type 由新
+                # JSONResponse 重设为 application/json，保留旧值会冲突。
+                headers={
+                    k: v
+                    for k, v in response.headers.items()
+                    if k.lower() not in ("content-length", "content-type")
+                },
+                background=response.background,
             )
 
         return envelope_handler

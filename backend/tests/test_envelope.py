@@ -3,7 +3,7 @@
 Task 1 用 mini-app 钉包裹语义与异常映射；Task 2 追加真实接线契约测试。
 红线 3：mini-app 不触网。
 """
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Response
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from fastapi.testclient import TestClient
@@ -22,6 +22,11 @@ def _mini_app() -> FastAPI:
     @router.post("/things", status_code=201)
     def create(payload: Payload) -> dict:
         return {"id": 1, "name": payload.name}
+
+    @router.get("/with-header")
+    def with_header(response: Response) -> dict:
+        response.headers["X-Request-Id"] = "abc"
+        return {"echo": True}
 
     @router.delete("/nothing")
     def nothing() -> None:
@@ -60,6 +65,14 @@ def test_success_wraps_in_envelope():
     r = c.post("/things", json={"name": "x"})
     assert r.status_code == 201
     assert r.json() == {"code": 0, "message": "ok", "data": {"id": 1, "name": "x"}}
+
+
+def test_success_rewrap_keeps_endpoint_headers():
+    c = TestClient(_mini_app())
+    r = c.get("/with-header")
+    assert r.status_code == 200
+    assert r.json() == {"code": 0, "message": "ok", "data": {"echo": True}}
+    assert r.headers["x-request-id"] == "abc"
 
 
 def test_none_return_wraps_with_null_data():
