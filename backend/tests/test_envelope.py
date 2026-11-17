@@ -27,6 +27,10 @@ def _mini_app() -> FastAPI:
     def nothing() -> None:
         return None
 
+    @router.delete("/gone", status_code=204)
+    def gone() -> None:
+        return None
+
     @router.get("/raw", response_class=PlainTextResponse)
     def raw() -> str:
         return "ok"
@@ -66,6 +70,13 @@ def test_non_json_response_passes_through():
     r = c.get("/raw")
     assert r.status_code == 200
     assert r.text == "ok"  # 非 JSONResponse 原样放行，不包信封
+
+
+def test_204_no_body_response_passes_through():
+    c = TestClient(_mini_app())
+    r = c.delete("/gone")
+    assert r.status_code == 204
+    assert r.text == ""  # 无体响应原样放行：非信封、status 204、不抛错
 
 
 def test_http_exception_envelope():

@@ -42,6 +42,10 @@ class EnvelopeRoute(APIRoute):
 
         async def envelope_handler(request: Request) -> JSONResponse:
             response = await original_handler(request)
+            # 204/304 等 body-not-allowed 状态码会被 FastAPI 清空 body，
+            # 无体可包，原样放行（json.loads(b"") 会炸成 500 信封）。
+            if response.status_code in (204, 304) or not response.body:
+                return response
             if not isinstance(response, JSONResponse):
                 return response
             return JSONResponse(
