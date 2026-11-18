@@ -4,6 +4,8 @@
 __pycache__/
 node_modules/
 .env
+.env.development
+.env.production
 data/
 .pytest_tmp/
 .pytest_cache/
