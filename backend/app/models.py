@@ -141,10 +141,10 @@ class SpanType:
 
 
 class AdminUser(Base):
-    """管理后台账号（Task 14 鉴权：pbkdf2 哈希 + JWT）。首账号 seed 届时实现。"""
+    """管理后台账号（Task 14 鉴权：pbkdf2 哈希 + JWT，实现见 core/security.py 与 api/auth.py）。"""
 
     __tablename__ = "admin_user"
-    __table_args__ = {"comment": "管理后台账号（自建账密 + JWT 鉴权；首账号 seed 见 Task 14）"}
+    __table_args__ = {"comment": "管理后台账号（自建账密 + JWT 鉴权；首账号用 scripts/seed_admin.py 创建）"}
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
     username: Mapped[str] = mapped_column(String(64), unique=True, comment="登录名，唯一")
@@ -188,7 +188,7 @@ class Document(Base):
 
     __tablename__ = "document"
     __table_args__ = (
-        # 知识库详情页按库筛文档；worker 轮询 status∈(1, 7-重试) 领任务
+        # 知识库详情页按库筛文档；worker 轮询 status∈(1, 3-编辑续跑, 7-重试) 领任务
         Index("ix_document_kb_status", "kb_id", "status"),
         Index("ix_document_status", "status"),
         {"comment": "文档（状态机驱动：1 已上传→…→6 已完成；7 失败可重试）"},

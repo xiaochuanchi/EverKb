@@ -8,6 +8,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -35,11 +36,21 @@ class Settings(BaseSettings):
     embedding_dim: int = 1024
     embedding_batch_size: int = 10
 
-    # ── 鉴权（管理端 JWT；open 端 API-Key 属应用实体，存 DB）──────
+    # ── LLM（OpenAI 兼容协议；预置火山方舟豆包，答案生成）────────
+    # .env 沿用排期 ARK_ 命名（.env.example 已含），故经 alias 读取；
+    # 未填 ARK_API_KEY 时回落 llm_* 缺省，问答链路走 FakeLLM（测试/无 key 环境）。
+    llm_base_url: str = Field(
+        default="https://ark.cn-beijing.volces.com/api/v3", validation_alias="ARK_BASE_URL"
+    )
+    llm_api_key: str = Field(default="", validation_alias="ARK_API_KEY")
+    llm_model: str = Field(default="doubao-seed-2-0-lite-260428", validation_alias="ARK_MODEL")
+    llm_temperature: float = 0.3
+    chat_rate_limit_per_min: int = 60
+
+    # ── 鉴权（管理端 JWT；账号存 admin_user 表，首账号用 scripts/seed_admin.py
+    #    创建——2026-11-17 Task 14 回收 admin_username/admin_password_hash 遗留字段）──
     jwt_secret: str = "change-me"
     jwt_expire_hours: int = 24
-    admin_username: str = "admin"
-    admin_password_hash: str = ""  # sha256 hex；测试用 "test1234" 的哈希
 
     # ── 切块 / 上传限制（设计文档 §6.1）──────────────────────────
     chunk_target_chars: int = 600

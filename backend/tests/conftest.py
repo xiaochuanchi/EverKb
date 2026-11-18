@@ -1,8 +1,9 @@
 """pytest 共享夹具：测试 Settings（SQLite 内存库）+ LocalDiskStorage 注入 + 管线环境。
 
 红线 3：测试不发真实网络调用——vector/embedder 注入 Fake 双件套。
+Task 14 起 admin 路由整包挂鉴权：client 夹具预置 admin 账号并给测试客户端
+默认带 Authorization 头（登录接口自身的用例在 test_auth_api.py 里单独处理）。
 """
-import hashlib
 import io
 import uuid
 from types import SimpleNamespace
@@ -12,11 +13,17 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.core.db import init_db, make_engine, make_session_factory
+from app.core.security import create_access_token, hash_password
 from app.core.storage import LocalDiskStorage
 from app.main import create_app
-from app.models import Document, DocumentStatus, KnowledgeBase, SourceType
+from app.models import AdminUser, Document, DocumentStatus, KnowledgeBase, SourceType
 from app.services.embedding import FakeEmbedder
+from app.services.llm import FakeLLM
+from app.services.ratelimit import FakeRateLimiter
 from app.services.vector import FakeVector
+
+TEST_ADMIN_USERNAME = "admin"
+TEST_ADMIN_PASSWORD = "test1234"
 
 
 def make_test_settings(tmp_path, **overrides) -> Settings:
@@ -26,11 +33,21 @@ def make_test_settings(tmp_path, **overrides) -> Settings:
         storage_root=str(tmp_path / "storage"),
         worker_enabled=False,
         jwt_secret="test",
-        admin_username="admin",
-        admin_password_hash=hashlib.sha256(b"test1234").hexdigest(),
     )
     params.update(overrides)
     return Settings(**params)
+
+
+def seed_admin(app, *, username=TEST_ADMIN_USERNAME, password=TEST_ADMIN_PASSWORD,
+               is_active=True) -> AdminUser:
+    """向测试库插入 admin_user 行并返回（密码 test1234 的 pbkdf2 哈希）。"""
+    with app.state.session_factory() as session:
+        user = AdminUser(username=username, password_hash=hash_password(password),
+                         is_active=is_active)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user
 
 
 @pytest.fixture()
@@ -46,8 +63,12 @@ def client(tmp_path, settings) -> TestClient:
         storage=storage,
         embedder=FakeEmbedder(dim=8),
         vector=FakeVector(dim=8),
+        llm=FakeLLM(),
+        rate_limiter=FakeRateLimiter(),
     )
     with TestClient(app) as c:
+        user = seed_admin(app)
+        c.headers["Authorization"] = f"Bearer {create_access_token(user.id, settings)}"
         yield c
 
 

@@ -54,6 +54,7 @@ def process_document(
 
     try:
         # ── 模式判定（进入时一次性读取；前导失败同样折叠为 7，不逸出）──
+        entry_status = doc.status
         is_replace = _is_replace(session, doc)
         old_ids: list[int] = []
         if is_replace:
@@ -68,24 +69,28 @@ def process_document(
             session.query(Chunk).filter(Chunk.document_id == doc_id).delete()
             vector.delete_by_doc(doc_id)
 
-        doc.status = DocumentStatus.PARSING
-        session.commit()
-
-        # ── 取内容：文件读存储；网页抓取 + html 快照落存储 ──────────
-        if doc.source_type == SourceType.WEBPAGE:
-            html, md = fetch_and_extract(doc.source_url)  # 网络异常由 except 折叠为 7
-            storage.put_bytes(doc.oss_key, html)
+        # ── 取内容：编辑续跑（status==3）直接读已落库的 content.md，跳过解析；
+        #    其余从源走：文件读存储；网页抓取 + html 快照落存储 ──────────
+        if entry_status == DocumentStatus.EXTRACTED:
+            md = storage.get_bytes(content_key_for(doc.oss_key)).decode("utf-8")
         else:
-            data = storage.get_bytes(doc.oss_key)
-            result = get_parser(doc.file_type).parse(data, doc.oss_key.rsplit("/", 1)[-1])
-            if not result.ok:
-                raise PipelineError(result.reason or "解析失败")
-            md = result.markdown
+            doc.status = DocumentStatus.PARSING
+            session.commit()
 
-        # ── md 落存储，status=3 ────────────────────────────────────
-        storage.put_bytes(content_key_for(doc.oss_key), md.encode("utf-8"))
-        doc.status = DocumentStatus.EXTRACTED
-        session.commit()
+            if doc.source_type == SourceType.WEBPAGE:
+                html, md = fetch_and_extract(doc.source_url)  # 网络异常由 except 折叠为 7
+                storage.put_bytes(doc.oss_key, html)
+            else:
+                data = storage.get_bytes(doc.oss_key)
+                result = get_parser(doc.file_type).parse(data, doc.oss_key.rsplit("/", 1)[-1])
+                if not result.ok:
+                    raise PipelineError(result.reason or "解析失败")
+                md = result.markdown
+
+            # ── md 落存储，status=3 ────────────────────────────────
+            storage.put_bytes(content_key_for(doc.oss_key), md.encode("utf-8"))
+            doc.status = DocumentStatus.EXTRACTED
+            session.commit()
 
         # ── 切块入库，status=4 ─────────────────────────────────────
         drafts = chunk_markdown(
@@ -201,12 +206,16 @@ def run_pending(
     vector: VectorClient,
     settings: Settings,
 ) -> int:
-    """处理所有 status==1 的文档，返回处理数；单个失败不影响后续。"""
+    """处理所有 status∈(1, 3) 的文档，返回处理数；单个失败不影响后续。
+
+    1 = 上传/重试/替换待处理；3 = md 编辑续跑（PUT /content 置回 3，
+    处理从切块阶段开始）。全流程对两者一致，process_document 内部分支。
+    """
     with session_factory() as session:
         ids = [
             rid
             for (rid,) in session.query(Document.id)
-            .filter(Document.status == DocumentStatus.UPLOADED)
+            .filter(Document.status.in_((DocumentStatus.UPLOADED, DocumentStatus.EXTRACTED)))
             .order_by(Document.id)
         ]
     processed = 0
@@ -232,7 +241,14 @@ def _is_replace(session: Session, doc: Document) -> bool:
       成功后按 ids 清旧。
     - retry（7→1）不动 version：version==1 走清残留分支（红线 4）；
       version>1 的替换失败 retry 仍走替换分支，保旧版持续供检索。
+    - 进入时 status==3 且已有 chunk 行：md 编辑续跑（PUT /content 置回 3），
+      chunk 必来自此前完成版本——同样走替换分支保旧版供检索。
     """
     if doc.status == DocumentStatus.COMPLETED:
         return True
+    if doc.status == DocumentStatus.EXTRACTED:
+        has_chunks = (
+            session.query(Chunk.id).filter(Chunk.document_id == doc.id).first() is not None
+        )
+        return has_chunks
     return doc.status == DocumentStatus.UPLOADED and doc.version > 1

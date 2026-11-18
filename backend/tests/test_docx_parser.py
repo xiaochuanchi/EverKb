@@ -40,7 +40,7 @@ def test_docx_to_markdown_mapping():
 
 
 def test_registry_dispatch_and_whitelist():
-    assert SUPPORTED_FILE_TYPES == {"docx", "pdf", "xlsx"}
+    assert SUPPORTED_FILE_TYPES == {"docx", "pdf", "xlsx", "txt", "md", "csv", "html"}
     assert get_parser("docx") is not None
     with pytest.raises(ValueError):
         get_parser("exe")

@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.db import init_db
+from app.core.security import create_access_token
 from app.core.storage import LocalDiskStorage
 from app.main import create_app
 from app.models import Chunk, Document, DocumentStatus, SourceType
@@ -19,7 +20,7 @@ from app.services.embedding import FakeEmbedder
 from app.services.pipeline import content_key_for, run_pending
 from app.services.vector import FakeVector
 from app.workers import start_worker
-from tests.conftest import make_docx_bytes, make_test_settings
+from tests.conftest import make_docx_bytes, make_test_settings, seed_admin
 
 BASE = "/api/v1/admin"
 
@@ -112,6 +113,9 @@ def test_upload_oversize_413(tmp_path):
         vector=FakeVector(dim=8),
     )
     with TestClient(app) as c:
+        # Task 14：admin 路由整包挂鉴权——自建客户端需先登录再带 token
+        user = seed_admin(app)
+        c.headers["Authorization"] = f"Bearer {create_access_token(user.id, settings)}"
         # 最小 docx（zip 容器开销）也远超 1000 字节上限
         r = _upload(c, _kb(c), "大文件.docx", make_docx_bytes([("标题", ["正文"])]))
         assert r.status_code == 413

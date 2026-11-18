@@ -15,7 +15,14 @@ from app.core.db import get_db
 from app.core.storage import StorageClient
 from app.models import Chunk, Document, DocumentStatus, KnowledgeBase, SourceType
 from app.parsers import SUPPORTED_FILE_TYPES
-from app.schemas import DocumentEnabledPatch, DocumentOut, DocumentPageOut, WebDocCreate
+from app.schemas import (
+    ContentOut,
+    ContentUpdate,
+    DocumentEnabledPatch,
+    DocumentOut,
+    DocumentPageOut,
+    WebDocCreate,
+)
 from app.services.pipeline import content_key_for
 from app.services.vector import VectorClient
 
@@ -195,6 +202,55 @@ def replace_document_file(
     doc.file_size = len(data)
     doc.version += 1
     doc.status = DocumentStatus.UPLOADED
+    doc.status_reason = None
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.get("/documents/{doc_id}/content", response_model=ContentOut)
+def get_document_content(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    storage: StorageClient = Depends(_storage),
+) -> ContentOut:
+    """读 content.md（md 编辑器）。未生成（status<3）409；存储缺对象 404。"""
+    doc = _get_doc_or_404(db, doc_id)
+    if doc.status < DocumentStatus.EXTRACTED:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="文档尚未生成 markdown，暂不可编辑")
+    try:
+        data = storage.get_bytes(content_key_for(doc.oss_key))
+    except FileNotFoundError:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail="markdown 内容对象不存在（管线异常，请重试）"
+        ) from None
+    return ContentOut(document_id=doc_id, content=data.decode("utf-8"))
+
+
+@router.put("/documents/{doc_id}/content", response_model=DocumentOut)
+def put_document_content(
+    doc_id: int,
+    payload: ContentUpdate,
+    db: Session = Depends(get_db),
+    storage: StorageClient = Depends(_storage),
+) -> Document:
+    """保存编辑后的 content.md：覆盖对象、edited=True、status 置回 3。
+
+    worker 领 status==3 任务从切块阶段续跑（process_document 编辑分支）；
+    chunk 已存在（编辑完成态文档）走替换语义，旧版向量处理期间持续供检索。
+    处理中（2/4/5）拒绝写入：与 worker 竞争会互相覆盖状态。
+    """
+    doc = _get_doc_or_404(db, doc_id)
+    if doc.status in _PROCESSING_STATUSES:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="文档处理中，不可编辑")
+    if doc.status not in (DocumentStatus.EXTRACTED, DocumentStatus.COMPLETED):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="仅已生成 markdown（状态 3）或已完成（状态 6）的文档可编辑保存",
+        )
+    storage.put_bytes(content_key_for(doc.oss_key), payload.content.encode("utf-8"))
+    doc.edited = True
+    doc.status = DocumentStatus.EXTRACTED
     doc.status_reason = None
     db.commit()
     db.refresh(doc)
