@@ -29,8 +29,10 @@ import { $t } from '@/locales'
 export interface ErrorResponse {
   /** 错误状态码 */
   code: number
-  /** 错误消息 */
-  msg: string
+  /** 错误消息（EverKB 后端信封字段） */
+  message?: string
+  /** 错误消息（模板 mock 兼容字段） */
+  msg?: string
   /** 错误附加数据 */
   data?: unknown
 }
@@ -126,7 +128,9 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
   }
 
   const statusCode = error.response?.status
-  const errorMessage = error.response?.data?.msg || error.message
+  // 后端信封带中文 message（如「用户名或密码错误」「知识库名已存在」），优先于通用 i18n 文案
+  const backendMessage = error.response?.data?.message || error.response?.data?.msg
+  const errorMessage = backendMessage || error.message
   const requestConfig = error.config
 
   // 处理网络错误
@@ -137,10 +141,8 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
     })
   }
 
-  // 处理 HTTP 状态码错误
-  const message = statusCode
-    ? getErrorMessage(statusCode)
-    : errorMessage || $t('httpMsg.requestFailed')
+  // 处理 HTTP 状态码错误：后端有明确 message 用后端的，否则按状态码映射 i18n 文案
+  const message = backendMessage || (statusCode ? getErrorMessage(statusCode) : errorMessage || $t('httpMsg.requestFailed'))
   throw new HttpError(message, statusCode || ApiStatus.error, {
     data: error.response.data,
     url: requestConfig?.url,

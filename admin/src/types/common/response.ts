@@ -19,12 +19,14 @@
  * @author Art Design Pro Team
  */
 
-/** 基础 API 响应结构 */
+/** 基础 API 响应结构（对齐 EverKB 后端统一信封 {code, message, data}） */
 export interface BaseResponse<T = unknown> {
-  /** 状态码 */
+  /** 状态码：0 成功；失败 = HTTP 状态码 */
   code: number
-  /** 消息 */
-  msg: string
+  /** 消息（EverKB 后端字段） */
+  message?: string
+  /** 消息（模板 mock 兼容字段） */
+  msg?: string
   /** 数据 */
   data: T
 }

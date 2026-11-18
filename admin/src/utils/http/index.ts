@@ -65,7 +65,13 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (request: InternalAxiosRequestConfig) => {
     const { accessToken } = useUserStore()
-    if (accessToken) request.headers.set('Authorization', accessToken)
+    if (accessToken) {
+      // EverKB 后端要求 Bearer 前缀（store 里存的是裸 token）
+      request.headers.set(
+        'Authorization',
+        accessToken.startsWith('Bearer ') ? accessToken : `Bearer ${accessToken}`
+      )
+    }
 
     if (request.data && !(request.data instanceof FormData) && !request.headers['Content-Type']) {
       request.headers.set('Content-Type', 'application/json')
@@ -80,16 +86,26 @@ axiosInstance.interceptors.request.use(
   }
 )
 
+/** 信封 message 提取：EverKB 后端用 message，模板 mock 用 msg */
+function extractMessage(data: BaseResponse | undefined): string | undefined {
+  return data?.message || data?.msg || undefined
+}
+
 /** 响应拦截器 */
 axiosInstance.interceptors.response.use(
   (response: AxiosResponse<BaseResponse>) => {
-    const { code, msg } = response.data
-    if (code === ApiStatus.success) return response
-    if (code === ApiStatus.unauthorized) handleUnauthorizedError(msg)
-    throw createHttpError(msg || $t('httpMsg.requestFailed'), code)
+    const { code } = response.data
+    // EverKB 后端信封成功码为 0；兼容模板 mock 的 200 约定
+    if (code === 0 || code === ApiStatus.success) return response
+    const message = extractMessage(response.data)
+    if (code === ApiStatus.unauthorized) handleUnauthorizedError(message)
+    throw createHttpError(message || $t('httpMsg.requestFailed'), code)
   },
   (error) => {
-    if (error.response?.status === ApiStatus.unauthorized) handleUnauthorizedError()
+    // 业务级 401（登录失败/凭证失效）：透传后端中文 message，再走登出防抖
+    if (error.response?.status === ApiStatus.unauthorized) {
+      handleUnauthorizedError(extractMessage(error.response.data))
+    }
     return Promise.reject(handleError(error))
   }
 )
@@ -178,8 +194,9 @@ async function request<T = any>(config: ExtendedAxiosRequestConfig): Promise<T> 
     const res = await axiosInstance.request<BaseResponse<T>>(config)
 
     // 显示成功消息
-    if (config.showSuccessMessage && res.data.msg) {
-      showSuccess(res.data.msg)
+    const successMessage = res.data.message || res.data.msg
+    if (config.showSuccessMessage && successMessage) {
+      showSuccess(successMessage)
     }
 
     return res.data.data as T

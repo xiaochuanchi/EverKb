@@ -1,28 +1,21 @@
 import request from '@/utils/http'
 
 /**
- * EverKB Trace 查看器 API
- * span 树按 parentSpanId 渲染，任意深度（二期 Agent 编排零改动接入）
+ * EverKB Trace 查看器 API（对齐后端 /api/v1/admin/traces，Task 22）
+ * span 树由后端按 parent_span_id 直接组好（TraceTreeOut.spans），前端仅递归渲染。
+ * 列表入口复用 /records（qa_record 即一条 Trace 的主表）。
  */
 
-/** Trace 分页列表（关联 qa_record 摘要） */
-export function fetchTraceList(params: Api.EverKB.TraceSearchParams) {
-  return request.get<Api.Common.PaginatedResponse<Api.EverKB.QaRecord>>({
-    url: '/api/traces',
-    params
+/** 单条问答的 span 树（后端已组树，spans 为根节点列表） */
+export function fetchTraceTree(recordId: number) {
+  return request.get<Api.EverKB.TraceTree>({
+    url: `/api/v1/admin/traces/${recordId}`
   })
 }
 
-/** 单条 Trace 的 Span 全集（前端按 parentSpanId 组树） */
-export function fetchTraceSpans(traceId: number) {
-  return request.get<Api.EverKB.TraceSpan[]>({
-    url: `/api/traces/${traceId}/spans`
-  })
-}
-
-/** 跨 Trace 聚合：最慢调用 Top N、各步骤 P95 */
+/** 跨 Trace 聚合：最慢调用 Top N + 各 span_type P95/平均 token/平均花费 */
 export function fetchTraceAggregation() {
   return request.get<Api.EverKB.TraceAggregation>({
-    url: '/api/traces/aggregation'
+    url: '/api/v1/admin/traces/aggregate'
   })
 }

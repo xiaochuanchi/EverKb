@@ -1,21 +1,14 @@
 import request from '@/utils/http'
 
 /**
- * EverKB Chunk API
- * chunk 内容来自 content.md，双存 MySQL 与 Milvus（id 兼作 Milvus 主键）
+ * EverKB Chunk 浏览 API（对齐后端 /api/v1/admin/documents/{id}/chunks，Task 13）
+ * chunk 由 content.md 切分而来，双存 MySQL 与 Milvus（id 兼作 Milvus 主键）。
  */
 
-/** chunk 分页列表 */
-export function fetchChunkList(params: Api.EverKB.ChunkSearchParams) {
-  return request.get<Api.Common.PaginatedResponse<Api.EverKB.Chunk>>({
-    url: '/api/chunks',
+/** 单文档 chunk 分页列表（按 chunk_index 升序） */
+export function fetchChunkPage(documentId: number, params: Api.EverKB.ChunkPageParams = {}) {
+  return request.get<Api.EverKB.ChunkPage>({
+    url: `/api/v1/admin/documents/${documentId}/chunks`,
     params
-  })
-}
-
-/** 单文档 chunk 全量（按 chunk_index 排序） */
-export function fetchDocumentChunks(documentId: number) {
-  return request.get<Api.EverKB.Chunk[]>({
-    url: `/api/documents/${documentId}/chunks`
   })
 }

@@ -1,37 +1,23 @@
 import request from '@/utils/http'
 
 /**
- * EverKB 问答记录 API
- * qa_record = 一条 Trace 的主表（traceId = qaRecord.id）
+ * EverKB 问答记录 API（对齐后端 /api/v1/admin/records，Task 22）
+ * qa_record = 一条 Trace 的主表（traceId = qa_record.id）。
+ * 注意：用户反馈的提交端点在 open 侧（POST /api/v1/apps/{id}/feedback，X-API-Key 鉴权），
+ * 管理后台一期只读浏览 + 反馈筛选，不在此提交反馈。
  */
 
-/** 问答记录分页列表 */
-export function fetchQaRecordList(params: Api.EverKB.QaRecordSearchParams) {
-  return request.get<Api.Common.PaginatedResponse<Api.EverKB.QaRecord>>({
-    url: '/api/qa-records',
+/** 问答记录分页列表（可按 app_id / feedback 筛选，id 倒序） */
+export function fetchQaRecordPage(params: Api.EverKB.QaRecordPageParams = {}) {
+  return request.get<Api.EverKB.QaRecordPage>({
+    url: '/api/v1/admin/records',
     params
   })
 }
 
-/** 单条问答详情（含引用 chunk 详情） */
+/** 单条问答记录详情（含 citations） */
 export function fetchQaRecordDetail(id: number) {
-  return request.get<Api.EverKB.QaRecord & { citations: Api.EverKB.Citation[] }>({
-    url: `/api/qa-records/${id}`
-  })
-}
-
-/** 用户反馈：1 满意 / -1 不满意 */
-export function fetchSubmitFeedback(id: number, feedback: Api.EverKB.Feedback) {
-  return request.post<void>({
-    url: `/api/qa-records/${id}/feedback`,
-    params: { feedback }
-  })
-}
-
-/** 反馈统计 */
-export function fetchFeedbackStats(appId?: number) {
-  return request.get<{ positive: number; negative: number; none: number }>({
-    url: '/api/qa-records/feedback-stats',
-    params: { appId }
+  return request.get<Api.EverKB.QaRecord>({
+    url: `/api/v1/admin/records/${id}`
   })
 }

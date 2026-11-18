@@ -1,22 +1,15 @@
 import request from '@/utils/http'
 
 /**
- * EverKB 对账工具 API
- * 反目标防线：MySQL 与 Milvus 数据不一致必须有对账手段（设计文档 §2.5）
+ * EverKB 对账工具 API（对齐后端 /api/v1/admin/reconciliation，Task 13）
+ * 扫描 status==6（已完成）文档的漂移：unvectorized（chunk 未入库却显示完成）、
+ * count_mismatch（MySQL chunk 数 != Milvus 计数）。返回漂移清单。
+ * 一期只读展示；一键重建依赖后端后续补端点，前端暂不提供。
  */
 
-/** 漂移扫描（vectorized 标志 vs Milvus 实际存在） */
-export function fetchReconcileScan() {
-  return request.get<Api.EverKB.ReconcileReport>({
-    url: '/api/reconcile/scan'
-  })
-}
-
-/** 一键重建（按 chunkIdsToRebuild 重嵌 + 重入库） */
-export function fetchReconcileRebuild(chunkIds: number[]) {
-  return request.post<{ rebuilt: number }>({
-    url: '/api/reconcile/rebuild',
-    params: { chunkIds },
-    timeout: 300000
+/** 漂移扫描（返回已完成文档的异常清单：{doc_id, issue}[]） */
+export function fetchReconciliation() {
+  return request.get<Api.EverKB.ReconciliationItem[]>({
+    url: '/api/v1/admin/reconciliation'
   })
 }
