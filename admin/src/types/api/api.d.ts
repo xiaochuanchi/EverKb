@@ -216,7 +216,7 @@ declare namespace Api {
     }
 
     /** 创建应用响应（后端 AppCreateOut，api_key 唯一一次明文返回） */
-    interface AppCreateResult extends App {}
+    type AppCreateResult = App
 
     /** POST /apps 请求体 */
     interface AppCreateParams {

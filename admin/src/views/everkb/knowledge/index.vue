@@ -76,35 +76,44 @@
   type KBRow = Api.EverKB.KB & { _statusLoading?: boolean }
 
   /** 列表加载：后端不分页，返回全量数组（useTable 数组响应自动适配） */
-  const apiFn = (_params: Record<string, unknown>) => fetchKbList()
+  const apiFn = () => fetchKbList()
 
-  const { data, loading, columns, columnChecks, fetchData, refreshData, refreshCreate, refreshUpdate, refreshRemove } =
-    useTable({
-      core: {
-        apiFn,
-        immediate: true,
-        columnsFactory: (): ColumnOption<KBRow>[] => [
-          { prop: 'id', label: 'ID', width: 70 },
-          { prop: 'name', label: '名称', minWidth: 180 },
-          {
-            prop: 'description',
-            label: '描述',
-            minWidth: 220,
-            showOverflowTooltip: true,
-            formatter: (row) => row.description || '-'
-          },
-          { prop: 'status', label: '状态', width: 110, useSlot: true },
-          {
-            prop: 'created_at',
-            label: '创建时间',
-            width: 170,
-            formatter: (row) => row.created_at?.replace('T', ' ').slice(0, 19) || '-'
-          },
-          { prop: 'actions', label: '操作', width: 140, fixed: 'right', useSlot: true }
-        ]
-      },
-      performance: { enableCache: false }
-    })
+  const {
+    data,
+    loading,
+    columns,
+    columnChecks,
+    fetchData,
+    refreshData,
+    refreshCreate,
+    refreshUpdate,
+    refreshRemove
+  } = useTable({
+    core: {
+      apiFn,
+      immediate: true,
+      columnsFactory: (): ColumnOption<KBRow>[] => [
+        { prop: 'id', label: 'ID', width: 70 },
+        { prop: 'name', label: '名称', minWidth: 180 },
+        {
+          prop: 'description',
+          label: '描述',
+          minWidth: 220,
+          showOverflowTooltip: true,
+          formatter: (row) => row.description || '-'
+        },
+        { prop: 'status', label: '状态', width: 110, useSlot: true },
+        {
+          prop: 'created_at',
+          label: '创建时间',
+          width: 170,
+          formatter: (row) => row.created_at?.replace('T', ' ').slice(0, 19) || '-'
+        },
+        { prop: 'actions', label: '操作', width: 140, fixed: 'right', useSlot: true }
+      ]
+    },
+    performance: { enableCache: false }
+  })
 
   // ── 状态启停 ─────────────────────────────────────────────────────
   const handleToggleStatus = async (row: KBRow, enabled: boolean) => {
@@ -184,11 +193,11 @@
   // ── 删除 ─────────────────────────────────────────────────────────
   const handleDelete = async (row: KBRow) => {
     try {
-      await ElMessageBox.confirm(
-        `确定删除知识库「${row.name}」吗？仅空库可删除。`,
-        '删除确认',
-        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
-      )
+      await ElMessageBox.confirm(`确定删除知识库「${row.name}」吗？仅空库可删除。`, '删除确认', {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      })
     } catch {
       return
     }

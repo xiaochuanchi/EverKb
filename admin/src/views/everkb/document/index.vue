@@ -87,7 +87,11 @@
       </template>
 
       <template #source_type="{ row }">
-        <ElTag size="small" effect="plain" :type="row.source_type === DOC_SOURCE_TYPE.Webpage ? 'success' : 'info'">
+        <ElTag
+          size="small"
+          effect="plain"
+          :type="row.source_type === DOC_SOURCE_TYPE.Webpage ? 'success' : 'info'"
+        >
           {{ row.source_type === DOC_SOURCE_TYPE.Webpage ? '网页' : '上传' }}
         </ElTag>
       </template>
@@ -153,7 +157,9 @@
         <el-icon :size="40" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
         <template #tip>
-          <div class="el-upload__tip">支持 docx / pdf / xlsx / txt / md / csv / html，单文件不超过 10MB</div>
+          <div class="el-upload__tip"
+            >支持 docx / pdf / xlsx / txt / md / csv / html，单文件不超过 10MB</div
+          >
         </template>
       </ElUpload>
       <template #footer>
@@ -167,7 +173,8 @@
     <!-- 替换重传弹窗 -->
     <ElDialog v-model="replaceVisible" title="替换文件" width="480px" :close-on-click-modal="false">
       <p class="replace-tip">
-        覆盖 <b>{{ replacingDoc?.name }}</b> 的源文件，版本 +1 并重新处理；处理期间旧版内容持续供检索。
+        覆盖 <b>{{ replacingDoc?.name }}</b> 的源文件，版本 +1
+        并重新处理；处理期间旧版内容持续供检索。
       </p>
       <ElUpload
         drag
@@ -180,12 +187,19 @@
         <el-icon :size="40" class="upload-icon"><UploadFilled /></el-icon>
         <div class="el-upload__text">拖拽新文件到此处，或 <em>点击选择</em></div>
         <template #tip>
-          <div class="el-upload__tip">支持 docx / pdf / xlsx / txt / md / csv / html，单文件不超过 10MB</div>
+          <div class="el-upload__tip"
+            >支持 docx / pdf / xlsx / txt / md / csv / html，单文件不超过 10MB</div
+          >
         </template>
       </ElUpload>
       <template #footer>
         <ElButton @click="replaceVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="replacing" :disabled="!replaceFile" @click="handleReplace">
+        <ElButton
+          type="primary"
+          :loading="replacing"
+          :disabled="!replaceFile"
+          @click="handleReplace"
+        >
           替换
         </ElButton>
       </template>
@@ -208,8 +222,17 @@
 
     <!-- 原文预览抽屉 -->
     <ElDrawer v-model="previewVisible" :title="previewDoc?.name || '原文预览'" size="60%">
-      <div v-if="previewLoading" class="preview-loading" v-loading="true" :element-loading-text="'加载中'" />
-      <MdPreview v-else-if="previewContent" :model-value="previewContent" :theme="appStore.isDark ? 'dark' : 'light'" />
+      <div
+        v-if="previewLoading"
+        class="preview-loading"
+        v-loading="true"
+        :element-loading-text="'加载中'"
+      />
+      <MdPreview
+        v-else-if="previewContent"
+        :model-value="previewContent"
+        :theme="appStore.isDark ? 'dark' : 'light'"
+      />
       <ElEmpty v-else description="暂无 markdown 内容" />
     </ElDrawer>
   </div>
@@ -241,7 +264,10 @@
   type DocRow = Api.EverKB.Document
 
   // ── 状态机元数据（7 态着色）──────────────────────────────────────
-  const STATUS_META: Record<number, { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }> = {
+  const STATUS_META: Record<
+    number,
+    { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }
+  > = {
     [DOC_STATUS.Uploaded]: { label: '已上传', tag: 'info' },
     [DOC_STATUS.Parsing]: { label: '解析中', tag: 'primary' },
     [DOC_STATUS.Extracted]: { label: '已抽取', tag: 'primary' },
@@ -273,46 +299,57 @@
   }
 
   // ── 表格 ─────────────────────────────────────────────────────────
-  const apiFn = (params: Record<string, unknown>) =>
-    fetchDocumentPage(currentKbId.value!, params)
+  const apiFn = (params: Record<string, unknown>) => fetchDocumentPage(currentKbId.value!, params)
 
-  const { data, loading, columns, pagination, fetchData, refreshData, refreshCreate, refreshUpdate, refreshRemove, searchParams, handleSizeChange, handleCurrentChange } =
-    useTable({
-      core: {
-        apiFn,
-        apiParams: { page: 1, size: 20 },
-        paginationKey: { current: 'page' },
-        immediate: false,
-        columnsFactory: (): ColumnOption<DocRow>[] => [
-          { prop: 'id', label: 'ID', width: 70 },
-          { prop: 'name', label: '文档', minWidth: 260, useSlot: true },
-          { prop: 'status', label: '状态', width: 110, useSlot: true },
-          { prop: 'source_type', label: '来源', width: 90, useSlot: true },
-          { prop: 'file_type', label: '类型', width: 80 },
-          {
-            prop: 'file_size',
-            label: '大小',
-            width: 100,
-            formatter: (row) => formatSize(row.file_size)
-          },
-          {
-            prop: 'chunk_count',
-            label: '块数',
-            width: 80,
-            formatter: (row) => (row.chunk_count > 0 ? String(row.chunk_count) : '-')
-          },
-          { prop: 'enabled', label: '启用', width: 80, useSlot: true },
-          {
-            prop: 'updated_at',
-            label: '更新时间',
-            width: 170,
-            formatter: (row) => row.updated_at?.replace('T', ' ').slice(0, 19) || '-'
-          },
-          { prop: 'actions', label: '操作', width: 230, fixed: 'right', useSlot: true }
-        ]
-      },
-      performance: { enableCache: false }
-    })
+  const {
+    data,
+    loading,
+    columns,
+    pagination,
+    fetchData,
+    refreshData,
+    refreshCreate,
+    refreshUpdate,
+    refreshRemove,
+    searchParams,
+    handleSizeChange,
+    handleCurrentChange
+  } = useTable({
+    core: {
+      apiFn,
+      apiParams: { page: 1, size: 20 },
+      paginationKey: { current: 'page' },
+      immediate: false,
+      columnsFactory: (): ColumnOption<DocRow>[] => [
+        { prop: 'id', label: 'ID', width: 70 },
+        { prop: 'name', label: '文档', minWidth: 260, useSlot: true },
+        { prop: 'status', label: '状态', width: 110, useSlot: true },
+        { prop: 'source_type', label: '来源', width: 90, useSlot: true },
+        { prop: 'file_type', label: '类型', width: 80 },
+        {
+          prop: 'file_size',
+          label: '大小',
+          width: 100,
+          formatter: (row) => formatSize(row.file_size)
+        },
+        {
+          prop: 'chunk_count',
+          label: '块数',
+          width: 80,
+          formatter: (row) => (row.chunk_count > 0 ? String(row.chunk_count) : '-')
+        },
+        { prop: 'enabled', label: '启用', width: 80, useSlot: true },
+        {
+          prop: 'updated_at',
+          label: '更新时间',
+          width: 170,
+          formatter: (row) => row.updated_at?.replace('T', ' ').slice(0, 19) || '-'
+        },
+        { prop: 'actions', label: '操作', width: 230, fixed: 'right', useSlot: true }
+      ]
+    },
+    performance: { enableCache: false }
+  })
 
   const statusFilter = ref<number | undefined>(undefined)
 
@@ -513,7 +550,10 @@
   // ── 编辑器跳转 ───────────────────────────────────────────────────
   const router = useRouter()
   const openEditor = (row: DocRow) => {
-    router.push({ path: '/everkb/editor', query: { docId: String(row.id), kbId: String(currentKbId.value ?? '') } })
+    router.push({
+      path: '/everkb/editor',
+      query: { docId: String(row.id), kbId: String(currentKbId.value ?? '') }
+    })
   }
 
   // ── chunk 浏览跳转 ───────────────────────────────────────────────

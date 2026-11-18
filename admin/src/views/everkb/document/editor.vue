@@ -16,12 +16,7 @@
       <div class="toolbar-spacer" />
 
       <span v-if="polling" class="poll-hint">保存后重新切块向量化中…</span>
-      <ElButton
-        type="primary"
-        :loading="saving"
-        :disabled="polling || !doc"
-        @click="handleSave"
-      >
+      <ElButton type="primary" :loading="saving" :disabled="polling || !doc" @click="handleSave">
         保存
       </ElButton>
     </div>
@@ -59,7 +54,10 @@
   const router = useRouter()
   const settingStore = useSettingStore()
 
-  const STATUS_META: Record<number, { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }> = {
+  const STATUS_META: Record<
+    number,
+    { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }
+  > = {
     [DOC_STATUS.Uploaded]: { label: '已上传', tag: 'info' },
     [DOC_STATUS.Parsing]: { label: '解析中', tag: 'primary' },
     [DOC_STATUS.Extracted]: { label: '已抽取', tag: 'primary' },
@@ -78,10 +76,22 @@
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
   const toolbars: ToolbarNames[] = [
-    'bold', 'underline', 'italic', 'strikeThrough', '-',
-    'title', 'quote', 'unorderedList', 'orderedList', '-',
-    'codeRow', 'code', 'table', '-',
-    'preview', 'htmlPreview'
+    'bold',
+    'underline',
+    'italic',
+    'strikeThrough',
+    '-',
+    'title',
+    'quote',
+    'unorderedList',
+    'orderedList',
+    '-',
+    'codeRow',
+    'code',
+    'table',
+    '-',
+    'preview',
+    'htmlPreview'
   ]
 
   const editable = (d: Api.EverKB.Document) =>
