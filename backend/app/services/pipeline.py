@@ -19,14 +19,20 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.storage import StorageClient
-from app.models import Chunk, Document, DocumentStatus, SourceType
+from app.models import Chunk, Document, DocumentStatus, SourceType, SpanType
 from app.parsers import get_parser
 from app.parsers.webpage import fetch_and_extract
 from app.services.chunking import chunk_markdown, estimate_tokens
 from app.services.embedding import Embedder
+from app.services.trace import Tracer
 from app.services.vector import VectorClient, VectorRow
 
 _REASON_MAX_CHARS = 500  # status_reason 列 String(512)，异常摘要截 500 字
+
+# 管线 Trace 的 trace_id 命名空间：用负数空间与 qa_record.id（正整数）隔离，
+# 避免入库链路 span 与问答链路 span 的 trace_id 碰撞（TraceSpan.trace_id 语义
+# 一期强绑定 qa_record.id）。入库 trace_id = -(doc_id)。
+_PIPELINE_TRACE_ID_OFFSET = -1
 
 
 class PipelineError(Exception):
@@ -46,11 +52,22 @@ def process_document(
     embedder: Embedder,
     vector: VectorClient,
     settings: Settings,
+    tracer: Tracer | None = None,
 ) -> None:
-    """单文档全流程处理：状态机推进到 6，任一步失败折叠为 7 + reason。"""
+    """单文档全流程处理：状态机推进到 6，任一步失败折叠为 7 + reason。
+
+    tracer 非空时（二期 Task 29），管线各阶段（parse/chunking/embedding/
+    vector_insert）埋 span 供 admin Trace 查看器观测；观测写库失败绝不打断
+    入库（Tracer.flush 内部 try/except 吞掉，且失败态下 span 随事务回滚）。
+    """
     doc = session.get(Document, doc_id)
     if doc is None:
         raise ValueError(f"文档不存在：doc_id={doc_id}")
+
+    # 管线观测：独立 trace_id 命名空间（负数），与问答 qa_record.id 隔离
+    observe = tracer is not None
+    if observe:
+        tracer.start(_PIPELINE_TRACE_ID_OFFSET * doc_id)
 
     try:
         # ── 模式判定（进入时一次性读取；前导失败同样折叠为 7，不逸出）──
@@ -78,14 +95,29 @@ def process_document(
             session.commit()
 
             if doc.source_type == SourceType.WEBPAGE:
-                html, md = fetch_and_extract(doc.source_url)  # 网络异常由 except 折叠为 7
+                if observe:
+                    with tracer.span("parser.webpage", SpanType.PARSE, parent_id=None) as parse_span:
+                        parse_span.set_input_summary(doc.source_url)
+                        html, md = fetch_and_extract(doc.source_url)  # 网络异常由 except 折叠为 7
+                        parse_span.set_output_summary(f"md={len(md)} chars")
+                else:
+                    html, md = fetch_and_extract(doc.source_url)
                 storage.put_bytes(doc.oss_key, html)
             else:
                 data = storage.get_bytes(doc.oss_key)
-                result = get_parser(doc.file_type).parse(data, doc.oss_key.rsplit("/", 1)[-1])
-                if not result.ok:
-                    raise PipelineError(result.reason or "解析失败")
-                md = result.markdown
+                if observe:
+                    with tracer.span("parser.parse", SpanType.PARSE, parent_id=None) as parse_span:
+                        parse_span.set_input_summary(doc.oss_key.rsplit("/", 1)[-1])
+                        result = get_parser(doc.file_type).parse(data, doc.oss_key.rsplit("/", 1)[-1])
+                        if not result.ok:
+                            raise PipelineError(result.reason or "解析失败")
+                        md = result.markdown
+                        parse_span.set_output_summary(f"md={len(md)} chars")
+                else:
+                    result = get_parser(doc.file_type).parse(data, doc.oss_key.rsplit("/", 1)[-1])
+                    if not result.ok:
+                        raise PipelineError(result.reason or "解析失败")
+                    md = result.markdown
 
             # ── md 落存储，status=3 ────────────────────────────────
             storage.put_bytes(content_key_for(doc.oss_key), md.encode("utf-8"))
@@ -93,9 +125,16 @@ def process_document(
             session.commit()
 
         # ── 切块入库，status=4 ─────────────────────────────────────
-        drafts = chunk_markdown(
-            md, target=settings.chunk_target_chars, overlap=settings.chunk_overlap_chars
-        )
+        if observe:
+            with tracer.span("chunking", SpanType.CHUNKING, parent_id=None) as chunk_span:
+                drafts = chunk_markdown(
+                    md, target=settings.chunk_target_chars, overlap=settings.chunk_overlap_chars
+                )
+                chunk_span.set_output_summary(f"chunks={len(drafts)}")
+        else:
+            drafts = chunk_markdown(
+                md, target=settings.chunk_target_chars, overlap=settings.chunk_overlap_chars
+            )
         if not drafts:
             # 空文档响亮失败（Minor #5 裁定）：与扫描件/空网页同形态 → 7，
             # 拒绝 status=6 + 0 chunk 静默完成污染 KB
@@ -120,8 +159,14 @@ def process_document(
         texts = [c.content for c in new_chunks]
         vectors: list[list[float]] = []
         batch = max(1, settings.embedding_batch_size)  # 防 0/负值零步长（Task 8 遗留点，接配置处守卫）
-        for i in range(0, len(texts), batch):
-            vectors.extend(embedder.embed(texts[i : i + batch]))
+        if observe:
+            with tracer.span("embedding", SpanType.EMBEDDING, parent_id=None) as emb_span:
+                for i in range(0, len(texts), batch):
+                    vectors.extend(embedder.embed(texts[i : i + batch]))
+                emb_span.set_output_summary(f"vectors={len(vectors)}")
+        else:
+            for i in range(0, len(texts), batch):
+                vectors.extend(embedder.embed(texts[i : i + batch]))
         if len(vectors) != len(texts):
             # 响亮失败守卫（Minor #4）：zip 会静默截断，缺向量的 chunk 照常
             # 标记 vectorized 完成——拒绝（与「失败要响」先例一致）
@@ -139,7 +184,7 @@ def process_document(
             session.rollback()
             return
         _, enabled_now = fresh
-        vector.insert([
+        insert_rows = [
             VectorRow(
                 id=c.id,
                 vector=v,
@@ -150,7 +195,13 @@ def process_document(
                 enabled=enabled_now,
             )
             for c, v in zip(new_chunks, vectors)
-        ])
+        ]
+        if observe:
+            with tracer.span("vector.insert", SpanType.VECTOR_INSERT, parent_id=None) as ins_span:
+                vector.insert(insert_rows)
+                ins_span.set_output_summary(f"rows={len(insert_rows)}")
+        else:
+            vector.insert(insert_rows)
         # insert 后复查：删除落在现读与 insert 之间时，补偿清掉刚插入的向量
         if session.execute(
             select(Document.id).where(Document.id == doc_id)
@@ -172,6 +223,13 @@ def process_document(
         doc.status = DocumentStatus.COMPLETED
         doc.status_reason = None  # 清掉历史失败原因（重试成功场景）
         session.commit()
+        # 观测 span 落库（尽力而为）：flush 内部吞异常，此处再包一层双保险，
+        # 观测失败绝不打断已完成入库（红线：观测不阻塞主流程）
+        if observe:
+            try:
+                tracer.flush(session)
+            except Exception:  # noqa: BLE001 —— 观测写库失败必须吞掉
+                pass
     except Exception as e:  # 宽捕获转失败态（Task 8 移交裁定：管线兜底是本层责任）
         session.rollback()
         # identity-map 缓存不可信：session.get 命中已删行的缓存实例时，commit 会
@@ -205,11 +263,13 @@ def run_pending(
     embedder: Embedder,
     vector: VectorClient,
     settings: Settings,
+    tracer: Tracer | None = None,
 ) -> int:
     """处理所有 status∈(1, 3) 的文档，返回处理数；单个失败不影响后续。
 
     1 = 上传/重试/替换待处理；3 = md 编辑续跑（PUT /content 置回 3，
     处理从切块阶段开始）。全流程对两者一致，process_document 内部分支。
+    tracer 透传给 process_document（每个文档一个独立入库 trace）。
     """
     with session_factory() as session:
         ids = [
@@ -225,6 +285,7 @@ def run_pending(
                 process_document(
                     session, doc_id,
                     storage=storage, embedder=embedder, vector=vector, settings=settings,
+                    tracer=tracer,
                 )
                 processed += 1
             except Exception:  # 业务异常已被 process_document 折叠；此处兜基础设施故障

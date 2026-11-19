@@ -127,7 +127,11 @@ class Feedback:
 
 
 class SpanType:
-    """span_type 枚举；tool / agent_step 为二期编排引擎预留（设计文档 §4）。"""
+    """span_type 枚举；tool / agent_step 为二期编排引擎预留（设计文档 §4）。
+
+    parse / chunking / vector_insert 为二期 Task 29「解析管线纳入 Trace 观测」新增，
+    对齐 OpenTelemetry GenAI 语义惯例之外的自定义入库链路类型。
+    """
 
     EMBEDDING = "embedding"
     RETRIEVAL = "retrieval"
@@ -135,6 +139,10 @@ class SpanType:
     LLM = "llm"
     TOOL = "tool"
     AGENT_STEP = "agent_step"
+    # 二期 Task 29：解析管线各阶段
+    PARSE = "parse"
+    CHUNKING = "chunking"
+    VECTOR_INSERT = "vector_insert"
 
 
 # ── 管理域 ──────────────────────────────────────────────────────

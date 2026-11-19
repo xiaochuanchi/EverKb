@@ -8,6 +8,7 @@ import logging
 import threading
 
 from app.services.pipeline import run_pending
+from app.services.trace import Tracer
 
 logger = logging.getLogger("everkb.worker")
 
@@ -18,12 +19,16 @@ def worker_loop(session_factory, deps, interval: float, stop: threading.Event) -
     基础设施异常（MySQL 瞬断等）只记日志不退出——线程静默死亡 = 队列
     永久停摆（终审 Important #3）；下一轮轮询自愈。
     """
+    # 管线观测 Tracer（二期 Task 29）：单实例可复用——process_document 内
+    # 每次 start 新 trace_id 并 flush，观测写库失败被 Tracer 内部吞掉。
+    tracer = Tracer()
     while not stop.is_set():
         try:
             run_pending(
                 session_factory,
                 storage=deps.storage, embedder=deps.embedder,
                 vector=deps.vector, settings=deps.settings,
+                tracer=tracer,
             )
         except Exception:
             logger.exception("worker 轮询失败，下一轮重试")
