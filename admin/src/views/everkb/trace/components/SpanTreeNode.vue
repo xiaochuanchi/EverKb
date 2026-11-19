@@ -66,7 +66,10 @@
     db: { label: '数据库', tag: 'info' },
     llm: { label: 'LLM', tag: 'warning' },
     tool: { label: '工具', tag: 'info' },
-    agent_step: { label: '编排', tag: 'info' }
+    agent_step: { label: '编排', tag: 'info' },
+    parse: { label: '解析', tag: 'primary' },
+    chunking: { label: '切块', tag: 'primary' },
+    vector_insert: { label: '向量入库', tag: 'success' }
   }
 
   const expanded = ref(true)

@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-11-19T14:40:00+08:00",
+  "top_k": 5,
+  "n_items": 90,
+  "n_chunks": 233,
+  "oversample": 4,
+  "rrf_k": 60,
+  "eval_kb": "kb-eval-legal",
+  "seed": 42,
+  "results": [
+    {
+      "key": "dense",
+      "label": "纯向量",
+      "recall_at_k": 0.844,
+      "mrr": 0.633,
+      "hit_at_k": 0.844
+    },
+    {
+      "key": "sparse",
+      "label": "纯 BM25",
+      "recall_at_k": 0.711,
+      "mrr": 0.518,
+      "hit_at_k": 0.711
+    },
+    {
+      "key": "hybrid",
+      "label": "RRF 混合",
+      "recall_at_k": 0.878,
+      "mrr": 0.675,
+      "hit_at_k": 0.878
+    }
+  ]
+}

@@ -13,6 +13,14 @@ export function fetchTraceTree(recordId: number) {
   })
 }
 
+/** 入库链路 Trace 分页列表（负数 trace_id = -(doc_id)，二期 Task 29） */
+export function fetchPipelineTraces(params: Record<string, unknown>) {
+  return request.get<Api.EverKB.PipelineTracePage>({
+    url: '/api/v1/admin/traces/pipeline',
+    params
+  })
+}
+
 /** 跨 Trace 聚合：最慢调用 Top N + 各 span_type P95/平均 token/平均花费 */
 export function fetchTraceAggregation() {
   return request.get<Api.EverKB.TraceAggregation>({

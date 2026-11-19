@@ -20,6 +20,7 @@ from app.api.auth import require_admin, router as auth_router
 from app.api.chunks import router as chunks_router
 from app.api.documents import router as documents_router
 from app.api.envelope import register_exception_handlers
+from app.api.evals import router as evals_router
 from app.api.kb import router as kb_router
 from app.api.open import router as open_router
 from app.api.reconciliation import router as reconciliation_router
@@ -143,6 +144,7 @@ def create_app(
     app.include_router(apps_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(records_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(traces_router, prefix="/api/v1/admin", dependencies=admin_auth)
+    app.include_router(evals_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(open_router, prefix="/api/v1")
     _assert_admin_routes_protected(app)
 

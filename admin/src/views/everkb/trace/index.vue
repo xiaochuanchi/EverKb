@@ -90,6 +90,37 @@
           </div>
         </template>
       </ElTabPane>
+
+      <!-- Tab 3: 入库链路（二期 Task 29：文档解析管线 span） -->
+      <ElTabPane label="入库链路" name="pipeline">
+        <ArtTable
+          :columns="pipelineColumns"
+          :data="pipelineData"
+          :loading="pipelineLoading"
+          :pagination="pipelinePagination"
+          :paginationOptions="{ pageSizes: [20, 50, 100], hideOnSinglePage: false }"
+          empty-height="420"
+          emptyText="暂无入库链路 Trace（文档入库后自动产生 parse/chunking/embedding/vector_insert span）"
+          @pagination:size-change="handlePipelineSizeChange"
+          @pagination:current-change="handlePipelineCurrentChange"
+        >
+          <template #trace_id="{ row }">
+            <span class="cell-ellipsis" :title="`Trace #${row.trace_id}`">{{ row.trace_id }}</span>
+          </template>
+          <template #doc_name="{ row }">
+            <ElButton link type="primary" @click="openPipelineDetail(row)">
+              {{ row.doc_name ?? `文档 #${row.doc_id}` }}
+            </ElButton>
+          </template>
+          <template #doc_status="{ row }">{{ docStatusLabel(row.doc_status) }}</template>
+          <template #span_count="{ row }">{{ row.span_count }}</template>
+          <template #total_latency_ms="{ row }">{{ row.total_latency_ms }}ms</template>
+          <template #last_start_time="{ row }">{{ formatTime(row.last_start_time) }}</template>
+          <template #actions="{ row }">
+            <ElButton link type="primary" @click="openPipelineDetail(row)">查看 Span 树</ElButton>
+          </template>
+        </ArtTable>
+      </ElTabPane>
     </ElTabs>
   </div>
 </template>
@@ -97,13 +128,14 @@
 <script setup lang="ts">
   import { useRouter } from 'vue-router'
   import { fetchQaRecordPage } from '@/api/everkb/qa-record'
-  import { fetchTraceAggregation } from '@/api/everkb/trace'
+  import { fetchPipelineTraces, fetchTraceAggregation } from '@/api/everkb/trace'
   import type { ColumnOption } from '@/types/component'
   import { useTable } from '@/hooks/core/useTable'
 
   defineOptions({ name: 'EverKBTrace' })
 
   type QaRow = Api.EverKB.QaRecord
+  type PipelineRow = Api.EverKB.PipelineTraceItem
 
   const router = useRouter()
   const activeTab = ref('list')
@@ -171,16 +203,66 @@
     db: '数据库',
     llm: 'LLM',
     tool: '工具',
-    agent_step: '编排'
+    agent_step: '编排',
+    parse: '解析',
+    chunking: '切块',
+    vector_insert: '向量入库'
   }
 
   const spanTypeLabel = (t: string) => SPAN_TYPE_LABEL[t] ?? t
 
   const formatTime = (iso: string) => iso?.replace('T', ' ').slice(0, 19) || '-'
 
-  // 切换到聚合 tab 时才加载
+  // ── Tab 3: 入库链路（管线 Trace）─────────────────────────────
+  const DOC_STATUS_LABEL: Record<number, string> = {
+    1: '已上传',
+    2: '解析中',
+    3: '已提取',
+    4: '已切块',
+    5: '向量化中',
+    6: '已完成',
+    7: '失败'
+  }
+  const docStatusLabel = (s: number | null) =>
+    s == null ? '-' : DOC_STATUS_LABEL[s] ?? `状态 ${s}`
+
+  const pipelineApiFn = (params: Record<string, unknown>) => fetchPipelineTraces(params)
+
+  const {
+    data: pipelineData,
+    loading: pipelineLoading,
+    columns: pipelineColumns,
+    pagination: pipelinePagination,
+    fetchData: fetchPipeline,
+    handleSizeChange: handlePipelineSizeChange,
+    handleCurrentChange: handlePipelineCurrentChange
+  } = useTable({
+    core: {
+      apiFn: pipelineApiFn,
+      apiParams: { page: 1, size: 20 },
+      paginationKey: { current: 'page' },
+      immediate: false,
+      columnsFactory: (): ColumnOption<PipelineRow>[] => [
+        { prop: 'trace_id', label: 'Trace ID', width: 100, useSlot: true },
+        { prop: 'doc_name', label: '文档', minWidth: 200, useSlot: true },
+        { prop: 'doc_status', label: '状态', width: 100, useSlot: true },
+        { prop: 'span_count', label: 'Span 数', width: 90, useSlot: true },
+        { prop: 'total_latency_ms', label: '总耗时', width: 110, useSlot: true },
+        { prop: 'last_start_time', label: '最近时间', width: 170, useSlot: true },
+        { prop: 'actions', label: '操作', width: 120, fixed: 'right', useSlot: true }
+      ]
+    },
+    performance: { enableCache: false }
+  })
+
+  const openPipelineDetail = (row: PipelineRow) => {
+    router.push({ path: '/everkb/trace-detail', query: { traceId: String(row.trace_id) } })
+  }
+
+  // 切换到聚合/入库链路 tab 时才加载
   watch(activeTab, (tab) => {
     if (tab === 'aggregate' && !aggregation.value) void loadAggregation()
+    if (tab === 'pipeline') void fetchPipeline()
   })
 
   onMounted(() => {

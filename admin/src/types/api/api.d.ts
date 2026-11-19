@@ -316,10 +316,32 @@ declare namespace Api {
       children: TraceSpanNode[]
     }
 
-    /** GET /traces/{record_id} 响应（后端 TraceTreeOut） */
+    /** GET /traces/{trace_id} 响应（后端 TraceTreeOut：正数=问答，负数=入库链路） */
     interface TraceTree {
-      record_id: number
+      trace_id: number
+      source: 'qa' | 'pipeline'
       spans: TraceSpanNode[]
+      doc: Document | null
+    }
+
+    /** 入库链路 Trace 列表项（后端 PipelineTraceItem） */
+    interface PipelineTraceItem {
+      trace_id: number
+      doc_id: number
+      doc_name: string | null
+      kb_id: number | null
+      doc_status: number | null
+      span_count: number
+      total_latency_ms: number
+      last_start_time: string | null
+    }
+
+    /** GET /traces/pipeline 分页响应（后端 PipelineTracePageOut） */
+    interface PipelineTracePage {
+      total: number
+      page: number
+      size: number
+      items: PipelineTraceItem[]
     }
 
     /** span（后端 TraceSpanOut，聚合 slowest 列表用） */
@@ -362,6 +384,30 @@ declare namespace Api {
     interface ReconciliationItem {
       doc_id: number
       issue: string
+    }
+
+    /* ============ 检索评测（Task 28 可视化） ============ */
+
+    /** 单路检索器消融指标（后端 AblationResultItem） */
+    interface AblationResultItem {
+      key: 'dense' | 'sparse' | 'hybrid'
+      label: string
+      recall_at_k: number
+      mrr: number
+      hit_at_k: number
+    }
+
+    /** GET /evals/ablation 响应（后端 AblationResultOut） */
+    interface AblationResult {
+      generated_at: string
+      top_k: number
+      n_items: number
+      n_chunks: number
+      oversample: number
+      rrf_k: number
+      eval_kb: string
+      seed: number
+      results: AblationResultItem[]
     }
   }
 

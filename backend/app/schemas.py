@@ -326,10 +326,40 @@ class TraceSpanNode(BaseModel):
 
 
 class TraceTreeOut(BaseModel):
-    """GET /traces/{record_id} 响应体：根 span 列表（成树）。"""
+    """GET /traces/{trace_id} 响应体：根 span 列表（成树）。
 
-    record_id: int
+    trace_id 语义二合一（二期 Task 29 起）：
+    - 正整数 = 问答链路（qa_record.id）
+    - 负整数 = 入库链路（-(doc_id)，管线 parse/chunking/embedding/vector_insert span）
+    source 标识来源，pipeline 时附 doc 信息供查看器展示。
+    """
+
+    trace_id: int
+    source: str  # "qa" | "pipeline"
     spans: list[TraceSpanNode]
+    doc: "DocumentOut | None" = None
+
+
+class PipelineTraceItem(BaseModel):
+    """入库链路 Trace 列表项（GET /traces/pipeline）。"""
+
+    trace_id: int  # 负数 = -(doc_id)
+    doc_id: int
+    doc_name: str | None = None
+    kb_id: int | None = None
+    doc_status: int | None = None
+    span_count: int
+    total_latency_ms: int
+    last_start_time: datetime | None = None
+
+
+class PipelineTracePageOut(BaseModel):
+    """入库链路 Trace 分页响应体。"""
+
+    total: int
+    page: int
+    size: int
+    items: list[PipelineTraceItem]
 
 
 class SpanAggregateItem(BaseModel):
@@ -348,3 +378,30 @@ class TraceAggregateOut(BaseModel):
 
     slowest: list[TraceSpanOut]
     by_type: list[SpanAggregateItem]
+
+
+# ── 检索评测（二期 Task 28，admin 可视化页）──────────────────────
+
+
+class AblationResultItem(BaseModel):
+    """单路检索器的消融指标。"""
+
+    key: str  # "dense" | "sparse" | "hybrid"
+    label: str  # 中文名
+    recall_at_k: float
+    mrr: float
+    hit_at_k: float
+
+
+class AblationResultOut(BaseModel):
+    """GET /evals/ablation 响应体：三路消融指标 + 实验元信息。"""
+
+    generated_at: str
+    top_k: int
+    n_items: int
+    n_chunks: int
+    oversample: int
+    rrf_k: int
+    eval_kb: str
+    seed: int
+    results: list[AblationResultItem]

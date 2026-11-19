@@ -8,8 +8,11 @@
 - sparse：纯 BM25（内存倒排）
 - hybrid：RRF 混合（向量 + BM25）
 
-产出 docs/2026-11-19-检索评测报告.md：三路 Recall@k / MRR / Hit@k 对比表 + 结论。
+产出：
+- docs/2026-11-19-检索评测报告.md：三路 Recall@k / MRR / Hit@k 对比表 + 结论；
+- data/legal/ablation_result.json：同指标的结构化 JSON，供 admin「检索评测」页面可视化。
 """
+import json
 import sys
 from pathlib import Path
 
@@ -25,6 +28,9 @@ from app.services.vector import BM25Index, HybridRetriever, create_vector  # noq
 EVAL_KB_NAME = "kb-eval-legal"
 EVAL_SET_PATH = Path(__file__).resolve().parents[1] / "data" / "legal" / "eval_set.json"
 REPORT_PATH = Path(__file__).resolve().parents[1] / "docs" / "2026-11-19-检索评测报告.md"
+ABLATION_RESULT_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "legal" / "ablation_result.json"
+)
 
 TOP_K = 5
 OVERSAMPLE = 4
@@ -71,7 +77,10 @@ def _main() -> int:
 
     # 生成报告（chunk 数动态传入，避免切块参数调整后报告数字失真）
     _write_report(result, len(eval_set.items), TOP_K, n_chunks=len(chunks))
+    # 结构化 JSON（供 admin 检索评测页面可视化）
+    _write_json(result, len(eval_set.items), TOP_K, n_chunks=len(chunks))
     print(f"报告已生成：{REPORT_PATH}")
+    print(f"结构化结果：{ABLATION_RESULT_PATH}")
     for name in ("dense", "sparse", "hybrid"):
         m = result[name]
         print(f"  {name:8s} recall@{TOP_K}={m['recall@k']:.3f}  mrr={m['mrr']:.3f}  hit@{TOP_K}={m['hit@k']:.3f}")
@@ -135,6 +144,37 @@ def _write_report(result: dict, n_items: int, top_k: int, n_chunks: int) -> None
 - **RRF 参数**：k=60（经典默认值），oversample=4，未做参数扫描。
 """
     REPORT_PATH.write_text(content, encoding="utf-8")
+
+
+def _write_json(result: dict, n_items: int, top_k: int, n_chunks: int) -> None:
+    """落结构化 JSON（供 admin 检索评测页面读取可视化）。
+
+    结构对齐后端 GET /api/v1/admin/evals/ablation 的响应 schema。
+    """
+    labels = {"dense": "纯向量", "sparse": "纯 BM25", "hybrid": "RRF 混合"}
+    payload = {
+        "generated_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        "top_k": top_k,
+        "n_items": n_items,
+        "n_chunks": n_chunks,
+        "oversample": OVERSAMPLE,
+        "rrf_k": 60,
+        "eval_kb": EVAL_KB_NAME,
+        "seed": 42,
+        "results": [
+            {
+                "key": name,
+                "label": labels[name],
+                "recall_at_k": round(m["recall@k"], 4),
+                "mrr": round(m["mrr"], 4),
+                "hit_at_k": round(m["hit@k"], 4),
+            }
+            for name, m in result.items()
+        ],
+    }
+    ABLATION_RESULT_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":

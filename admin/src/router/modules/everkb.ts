@@ -75,6 +75,13 @@ export const everkbRoutes: AppRouteRecord = {
       name: 'EverKBReconcile',
       component: '/everkb/reconcile',
       meta: { title: 'menus.everkb.reconcile', keepAlive: true }
+    },
+    {
+      // 检索评测：/everkb/eval（二期 Task 28 可视化，三路消融指标对比）
+      path: 'eval',
+      name: 'EverKBEval',
+      component: '/everkb/eval',
+      meta: { title: 'menus.everkb.eval', keepAlive: true }
     }
   ]
 }

@@ -150,8 +150,8 @@
   },
   "login": {
     "leftView": {
-      "title": "一款兼具设计美学与高效开发的后台系统",
-      "subTitle": "美观实用的界面，经过视觉优化，确保卓越的用户体验"
+      "title": "可观测的 RAG 知识库平台",
+      "subTitle": "别人帮你接入知识库，EverKB 帮你养知识库"
     },
     "title": "欢迎回来",
     "subTitle": "输入您的账号和密码登录",
@@ -275,7 +275,8 @@
       "qaRecord": "问答记录",
       "trace": "Trace 查看器",
       "traceDetail": "Trace 详情",
-      "reconcile": "对账工具"
+      "reconcile": "对账工具",
+      "eval": "检索评测"
     }
   },
   "table": {

@@ -6,13 +6,16 @@
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.envelope import EnvelopeRoute
 from app.core.db import get_db
-from app.models import QaRecord, TraceSpan
+from app.models import Document, QaRecord, TraceSpan
 from app.schemas import (
+    DocumentOut,
+    PipelineTraceItem,
+    PipelineTracePageOut,
     SpanAggregateItem,
     TraceAggregateOut,
     TraceSpanNode,
@@ -23,6 +26,10 @@ from app.schemas import (
 router = APIRouter(prefix="/traces", tags=["Trace"], route_class=EnvelopeRoute)
 
 _SLOWEST_TOP_N = 10
+
+# 入库链路 trace_id 命名空间：-(doc_id)，与问答 qa_record.id（正整数）符号隔离
+# （与 pipeline._PIPELINE_TRACE_ID_OFFSET 对齐，此处常量仅作语义说明，不参与计算）
+_PIPELINE_TRACE_PREFIX = "-"
 
 
 def _span_to_node(span: TraceSpan, children: list[TraceSpanNode]) -> TraceSpanNode:
@@ -106,13 +113,88 @@ def aggregate(
     }
 
 
-@router.get("/{record_id}", response_model=TraceTreeOut)
-def trace_tree(record_id: int, db: Session = Depends(get_db)) -> dict:
-    """单条问答的 span 树（parent_span_id 成树，按 start_time 排序）。"""
-    rec = db.get(QaRecord, record_id)
-    if rec is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="问答记录不存在")
-    spans = db.scalars(
-        select(TraceSpan).where(TraceSpan.trace_id == record_id)
+@router.get("/pipeline", response_model=PipelineTracePageOut)
+def pipeline_traces(
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> dict:
+    """入库链路 Trace 列表（二期 Task 29）：管线 span 的 trace_id 为负数（-(doc_id)）。
+
+    按 trace_id 分组统计 span 数 / 总耗时 / 最近时间，左连 document 取文档名，
+    便于查看器从「入库链路」入口点进 span 树。
+    """
+    rows = db.execute(
+        select(
+            TraceSpan.trace_id,
+            func.count(TraceSpan.id),
+            func.sum(TraceSpan.latency_ms),
+            func.max(TraceSpan.start_time),
+        )
+        .where(TraceSpan.trace_id < 0)
+        .group_by(TraceSpan.trace_id)
+        .order_by(TraceSpan.trace_id)
     ).all()
-    return {"record_id": record_id, "spans": _build_tree(spans)}
+
+    total = len(rows)
+    page_rows = rows[(page - 1) * size : page * size]
+
+    # 批量取关联文档（doc_id = -trace_id）
+    doc_ids = [(-r[0]) for r in page_rows]
+    docs: dict[int, Document] = {}
+    if doc_ids:
+        for d in db.scalars(select(Document).where(Document.id.in_(doc_ids))).all():
+            docs[d.id] = d
+
+    items: list[PipelineTraceItem] = []
+    for trace_id, cnt, latency_sum, last_time in page_rows:
+        doc = docs.get(-trace_id)
+        items.append(
+            PipelineTraceItem(
+                trace_id=trace_id,
+                doc_id=-trace_id,
+                doc_name=doc.name if doc else None,
+                kb_id=doc.kb_id if doc else None,
+                doc_status=doc.status if doc else None,
+                span_count=cnt,
+                total_latency_ms=int(latency_sum or 0),
+                last_start_time=last_time,
+            )
+        )
+
+    return {"total": total, "page": page, "size": size, "items": items}
+
+
+@router.get("/{trace_id}", response_model=TraceTreeOut)
+def trace_tree(trace_id: int, db: Session = Depends(get_db)) -> dict:
+    """单条问答 / 入库链路的 span 树（parent_span_id 成树，按 start_time 排序）。
+
+    trace_id 二义：正数 = qa_record.id（问答）；负数 = -(doc_id)（管线入库）。
+    """
+    spans = db.scalars(
+        select(TraceSpan).where(TraceSpan.trace_id == trace_id)
+    ).all()
+
+    if trace_id >= 0:
+        # 问答链路：校验 qa_record 存在
+        rec = db.get(QaRecord, trace_id)
+        if rec is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="问答记录不存在")
+        return {
+            "trace_id": trace_id,
+            "source": "qa",
+            "spans": _build_tree(spans),
+            "doc": None,
+        }
+
+    # 入库链路：负数 trace_id，关联文档
+    doc = db.get(Document, -trace_id)
+    if not spans:
+        # 无 span 且无文档 → 视为不存在（与问答 404 语义一致）
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="入库 Trace 不存在")
+    return {
+        "trace_id": trace_id,
+        "source": "pipeline",
+        "spans": _build_tree(spans),
+        "doc": DocumentOut.model_validate(doc) if doc else None,
+    }

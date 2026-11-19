@@ -150,8 +150,8 @@
   },
   "login": {
     "leftView": {
-      "title": "A backend system of beauty and efficiency",
-      "subTitle": "A sleek and practical interface for a great user experience"
+      "title": "The observable RAG knowledge base platform",
+      "subTitle": "Others help you connect a knowledge base — EverKB keeps it alive"
     },
     "title": "Welcome back",
     "subTitle": "Please enter your account and password to login",
@@ -275,7 +275,8 @@
       "qaRecord": "QA Records",
       "trace": "Trace Viewer",
       "traceDetail": "Trace Detail",
-      "reconcile": "Reconciliation"
+      "reconcile": "Reconciliation",
+      "eval": "Retrieval Eval"
     }
   },
   "table": {

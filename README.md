@@ -48,11 +48,13 @@ EverKB 不只「有」检索能力，还用一套可复现的评测工程**量�
 
 **结论**：混合检索在召回与排序上均优于任意单路——向量补足语义改写，BM25 补足专有名词/法条精确命中，RRF 倒数排名融合让两者互补而非冲突。完整实验（方法、局限、复现步骤）见 [检索评测报告](docs/2026-11-19-检索评测报告.md)。
 
+> 管理后台「检索评测」页可直接查看三路指标对比图（数据源 `data/legal/ablation_result.json`，由 `run_ablation.py` 自动生成），无需读文档。
+
 ```bash
 python scripts/fetch_legal_corpus.py   # 抓取 12 部法规 → data/legal/
 python scripts/seed_eval_kb.py         # 建评测库 kb-eval-legal 并入库（233 chunk）
 python scripts/build_eval_set.py       # 真实 LLM 合成评测集（90 条）
-python scripts/run_ablation.py         # 三路消融跑分 → 生成评测报告
+python scripts/run_ablation.py         # 三路消融跑分 → 生成评测报告 + ablation_result.json
 ```
 
 ## 架构
@@ -83,6 +85,13 @@ python scripts/run_ablation.py         # 三路消融跑分 → 生成评测报�
 ```
 问题 → [embedding] → [retrieval 检索] → [db 文档确认] → [llm 流式生成] → 回答 + 引用
          └─────┴──────┴──────┴─────── 全部 Span 成链，落库可回看 ──────┘
+```
+
+**入库链路（文档解析管线同样纳入观测）**
+
+```
+文档上传 → [parse 解析] → [chunking 切块] → [embedding 嵌入] → [vector_insert 向量入库]
+               └─────┴──────┴──────┴─────── 管线 Span 成链，Trace 查看器「入库链路」tab 可看 ──────┘
 ```
 
 ## 快速开始

@@ -4,7 +4,7 @@
 """
 from datetime import datetime, timedelta
 
-from app.models import QaRecord, TraceSpan
+from app.models import Document, KnowledgeBase, QaRecord, TraceSpan
 
 BASE = "/api/v1/admin/traces"
 
@@ -56,7 +56,8 @@ def test_trace_span_tree(client):
     r = client.get(f"{BASE}/{rec.id}")
     assert r.status_code == 200
     body = r.json()["data"]
-    assert body["record_id"] == rec.id
+    assert body["trace_id"] == rec.id
+    assert body["source"] == "qa"
     spans = body["spans"]
     assert len(spans) == 1  # 单链 → 一个根
     root = spans[0]
@@ -92,3 +93,82 @@ def test_trace_aggregate(client):
     for item in body["by_type"]:
         assert item["count"] == 2  # 两个 trace 各一个
         assert item["p95_latency_ms"] is not None
+
+
+def _seed_pipeline_trace(client, *, doc_id, n=4) -> None:
+    """造一条入库链路 trace（负数 trace_id = -doc_id，含 parse/chunking/embedding/vector_insert）。"""
+    session = client.app.state.session_factory()
+    base = datetime(2026, 1, 1, 12, 0, 0)
+    parent_id = None
+    for i, span_type in enumerate(["parse", "chunking", "embedding", "vector_insert"][:n]):
+        span = TraceSpan(
+            trace_id=-doc_id,
+            parent_span_id=parent_id,
+            name=span_type,
+            span_type=span_type,
+            start_time=base + timedelta(milliseconds=i * 10),
+            end_time=base + timedelta(milliseconds=i * 10 + 50),
+            latency_ms=50 + i * 10,
+        )
+        session.add(span)
+        session.flush()
+        parent_id = span.id
+    session.commit()
+    session.close()
+
+
+def _seed_doc(client, *, name="法规.md") -> Document:
+    session = client.app.state.session_factory()
+    kb = KnowledgeBase(name="kb-eval", description="评测库")
+    session.add(kb)
+    session.flush()
+    doc = Document(kb_id=kb.id, name=name, file_type="md", file_size=10, status=6)
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+    session.close()
+    return doc
+
+
+def test_pipeline_trace_tree(client):
+    """入库链路（负数 trace_id）可按 doc 关联查 span 树，source=pipeline。"""
+    doc = _seed_doc(client)
+    _seed_pipeline_trace(client, doc_id=doc.id, n=4)
+
+    r = client.get(f"{BASE}/{-doc.id}")
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert body["trace_id"] == -doc.id
+    assert body["source"] == "pipeline"
+    assert body["doc"]["id"] == doc.id
+    assert body["doc"]["name"] == "法规.md"
+    # 单链 → 一个根，逐层下钻 3 层
+    root = body["spans"][0]
+    assert root["span_type"] == "parse"
+    node, depth = root, 0
+    while node["children"]:
+        node = node["children"][0]
+        depth += 1
+    assert depth == 3
+
+
+def test_pipeline_trace_list(client):
+    """GET /pipeline 列出入库链路 trace，含 span 数/总耗时/关联文档名。"""
+    doc = _seed_doc(client, name="数据安全法.md")
+    _seed_pipeline_trace(client, doc_id=doc.id, n=4)
+
+    r = client.get(f"{BASE}/pipeline")
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["trace_id"] == -doc.id
+    assert item["doc_id"] == doc.id
+    assert item["doc_name"] == "数据安全法.md"
+    assert item["span_count"] == 4
+    assert item["total_latency_ms"] == 50 + 60 + 70 + 80
+
+
+def test_pipeline_trace_404(client):
+    """负数 trace_id 无 span → 404。"""
+    assert client.get(f"{BASE}/{-99999}").status_code == 404
