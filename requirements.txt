@@ -18,5 +18,6 @@ pymupdf>=1.24
 openpyxl>=3.1
 trafilatura>=1.8
 redis>=5                  # 鉴权黑名单/限流（技术决策记录 §3）
+jieba>=0.42               # BM25 稀疏检索分词（二期 Task 25 混合检索）
 
 pytest>=8
