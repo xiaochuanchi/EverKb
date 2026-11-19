@@ -117,7 +117,7 @@ everkb/
 │   │   ├── services/ #   pipeline 解析管线 / rag 检索 / trace 埋点 / llm 抽象
 │   │   ├── models.py #   SQLAlchemy 2.0 模型
 │   │   └── schemas.py#   Pydantic 契约
-│   └── tests/        #   228 个测试（pytest）
+│   └── tests/        #   248 个测试（pytest）
 ├── admin/            # Vue3 + Element Plus 管理后台
 ├── web/              # Vue3 用户对话端（含 chat-kit 对话核心组件）
 ├── docs/             # 设计文档 / 技术决策记录 / 排期
@@ -128,7 +128,7 @@ everkb/
 ## 测试
 
 ```bash
-# 后端（228 个用例）
+# 后端（248 个用例）
 cd backend && pytest
 
 # 前端（32 个用例，含架构边界测试）
