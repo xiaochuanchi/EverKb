@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-11-19T04:15:57.147880+00:00",
+  "items": [
+    {
+      "name": "中华人民共和国网络安全法",
+      "rank": "法律",
+      "source_url": "https://www.cac.gov.cn/2025-12/29/c_1768735112911946.htm",
+      "file": "网络安全法.md",
+      "chars": 11578
+    },
+    {
+      "name": "中华人民共和国数据安全法",
+      "rank": "法律",
+      "source_url": "https://www.gjbmj.gov.cn/n1/2026/0911/c462638-40797231.html",
+      "file": "数据安全法.md",
+      "chars": 6061
+    },
+    {
+      "name": "中华人民共和国个人信息保护法",
+      "rank": "法律",
+      "source_url": "http://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313088.html",
+      "file": "个人信息保护法.md",
+      "chars": 9595
+    },
+    {
+      "name": "中华人民共和国密码法",
+      "rank": "法律",
+      "source_url": "http://www.npc.gov.cn/npc/c1773/c1848/c21114/c36794/c36798/201910/t20191028_301735.html",
+      "file": "密码法.md",
+      "chars": 5199
+    },
+    {
+      "name": "网络数据安全管理条例",
+      "rank": "行政法规",
+      "source_url": "https://www.cac.gov.cn/2024-09/30/c_1729384452307680.htm",
+      "file": "网络数据安全管理条例.md",
+      "chars": 10465
+    },
+    {
+      "name": "关键信息基础设施安全保护条例",
+      "rank": "行政法规",
+      "source_url": "https://www.cac.gov.cn/2021-08/17/c_1630785976988160.htm",
+      "file": "关键信息基础设施安全保护条例.md",
+      "chars": 6187
+    },
+    {
+      "name": "未成年人网络保护条例",
+      "rank": "行政法规",
+      "source_url": "https://www.12377.cn/xzfg/2023/3cdab3f2_web.html",
+      "file": "未成年人网络保护条例.md",
+      "chars": 9325
+    },
+    {
+      "name": "数据出境安全评估办法",
+      "rank": "部门规章",
+      "source_url": "https://www.cac.gov.cn/2022-07/07/c_1658811536396503.htm",
+      "file": "数据出境安全评估办法.md",
+      "chars": 3198
+    },
+    {
+      "name": "个人信息出境标准合同办法",
+      "rank": "部门规章",
+      "source_url": "https://www.cac.gov.cn/2023-02/24/c_1678884830036813.htm",
+      "file": "个人信息出境标准合同办法.md",
+      "chars": 1722
+    },
+    {
+      "name": "网络安全审查办法",
+      "rank": "部门规章",
+      "source_url": "https://www.cac.gov.cn/2022-01/04/c_1642894602182845.htm",
+      "file": "网络安全审查办法.md",
+      "chars": 3393
+    },
+    {
+      "name": "最高人民法院、最高人民检察院关于办理侵犯公民个人信息刑事案件适用法律若干问题的解释",
+      "rank": "司法解释",
+      "source_url": "https://www.court.gov.cn/fabu/xiangqing/43942.html",
+      "file": "侵犯公民个人信息刑事案件司法解释.md",
+      "chars": 2384
+    },
+    {
+      "name": "最高人民法院关于审理使用人脸识别技术处理个人信息相关民事案件适用法律若干问题的规定",
+      "rank": "司法解释",
+      "source_url": "https://www.court.gov.cn/zixun/xiangqing/315851.html",
+      "file": "人脸识别民事案件司法解释.md",
+      "chars": 2878
+    }
+  ]
+}

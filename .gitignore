@@ -6,7 +6,8 @@ node_modules/
 .env
 .env.development
 .env.production
-data/
+data/*
+!data/legal/
 .pytest_tmp/
 .pytest_cache/
 .run/
