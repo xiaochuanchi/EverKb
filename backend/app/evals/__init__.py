@@ -6,7 +6,7 @@
 - metrics：Recall@k / MRR / Hit@k；
 - run_eval：三路消融（dense/sparse/hybrid）。
 """
-from app.evals.eval_set import EvalItem, EvalSet, load_eval_set, save_eval_set  # noqa: F401
+from app.evals.eval_set import EvalItem, EvalSet, load_eval_set, now_iso, save_eval_set  # noqa: F401
 from app.evals.metrics import evaluate, hit_rate, mrr, recall_at_k  # noqa: F401
 from app.evals.run_eval import run_ablation  # noqa: F401
 from app.evals.synthesize import build_eval_set, synthesize_queries  # noqa: F401
@@ -19,6 +19,7 @@ __all__ = [
     "hit_rate",
     "load_eval_set",
     "mrr",
+    "now_iso",
     "recall_at_k",
     "run_ablation",
     "save_eval_set",
