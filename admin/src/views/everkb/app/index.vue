@@ -112,11 +112,20 @@
             />
           </ElFormItem>
         </div>
-        <ElFormItem :label="$t('everkb.app.promptLabel')" prop="prompt_template">
+        <ElFormItem prop="prompt_template">
+          <template #label>
+            <div class="label-row">
+              <span>{{ $t('everkb.app.promptLabel') }}</span>
+              <ElButton link type="primary" size="small" @click="insertDefaultTemplate">
+                <el-icon class="mr-1"><MagicStick /></el-icon>
+                {{ $t('everkb.app.insertDefaultTpl') }}
+              </ElButton>
+            </div>
+          </template>
           <ElInput
             v-model="form.prompt_template"
             type="textarea"
-            :rows="3"
+            :rows="5"
             :placeholder="$t('everkb.app.promptPlaceholder', { ctx: '{context}', q: '{question}' })"
           />
         </ElFormItem>
@@ -169,7 +178,7 @@
 
 <script setup lang="ts">
   import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-  import { CopyDocument, Plus } from '@element-plus/icons-vue'
+  import { CopyDocument, MagicStick, Plus } from '@element-plus/icons-vue'
   import { useI18n } from 'vue-i18n'
   import { createApp, deleteApp, fetchAppList, resetAppKey, updateApp } from '@/api/everkb/app'
   import { fetchKbList } from '@/api/kb'
@@ -181,6 +190,16 @@
   const { t } = useI18n()
 
   const modelParamsExample = '{"model": "..."}'
+
+  // 与后端系统默认模板保持一致（backend/app/services/rag.py DEFAULT_PROMPT_TEMPLATE），改模板需两边同步
+  const DEFAULT_PROMPT_TEMPLATE = [
+    '你是一个知识库问答助手。请仅根据以下参考资料回答用户问题，并在引用资料时标注编号（如 [1]）。如果参考资料不足以回答，请如实说明。',
+    '',
+    '参考资料：',
+    '{context}',
+    '',
+    '用户问题：{question}'
+  ].join('\n')
 
   type AppRow = Api.EverKB.App & { _statusLoading?: boolean }
 
@@ -282,6 +301,20 @@
       { required: true, message: t('everkb.app.nameRequired'), trigger: 'blur' },
       { min: 1, max: 128, message: t('everkb.app.lengthLimit'), trigger: 'blur' }
     ],
+    prompt_template: [
+      {
+        // 与后端 schemas.py 校验一致：非空模板必须含 {question}，否则问题无法注入
+        validator: (_rule, value: string, callback) => {
+          if (!value || !value.trim()) return callback()
+          if (!value.includes('{question}')) {
+            callback(new Error(t('everkb.app.promptQuestionRequired', { q: '{question}' })))
+          } else {
+            callback()
+          }
+        },
+        trigger: 'blur'
+      }
+    ],
     model_params: [
       {
         validator: (_rule, value: string, callback) => {
@@ -334,6 +367,28 @@
     form.model_params = ''
     editingRow.value = null
     formRef.value?.resetFields()
+  }
+
+  // ── Prompt 模板辅助 ──────────────────────────────────────────────
+  /** 插入系统默认模板；已有内容时先确认覆盖 */
+  const insertDefaultTemplate = async () => {
+    if (form.prompt_template.trim()) {
+      try {
+        await ElMessageBox.confirm(
+          t('everkb.app.tplOverwriteConfirm'),
+          t('everkb.app.tplOverwriteTitle'),
+          {
+            type: 'warning',
+            confirmButtonText: t('everkb.app.confirm'),
+            cancelButtonText: t('everkb.app.cancel')
+          }
+        )
+      } catch {
+        return
+      }
+    }
+    form.prompt_template = DEFAULT_PROMPT_TEMPLATE
+    formRef.value?.clearValidate('prompt_template')
   }
 
   const parseModelParams = (): Record<string, unknown> | undefined => {
@@ -467,6 +522,13 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
   }
 
   .w-full {
