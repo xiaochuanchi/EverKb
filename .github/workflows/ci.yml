@@ -1,7 +1,7 @@
 # EverKB CI
 # - backend: pytest（测试不出网，无需 MySQL/Milvus/Redis 服务容器）
 # - admin / web: pnpm 安装 → lint → 构建（web 额外跑 vitest）
-# - 按路径过滤：只构建实际发生变化的模块
+# 三个作业全部无条件执行（路径过滤引入过 dorny/paths-filter 单点故障，收益不抵风险）
 
 name: CI
 
@@ -15,35 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Detect changes
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      admin: ${{ steps.filter.outputs.admin }}
-      web: ${{ steps.filter.outputs.web }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            backend:
-              - 'backend/**'
-              - 'requirements.txt'
-              - 'pytest.ini'
-              - '.github/workflows/ci.yml'
-            admin:
-              - 'admin/**'
-              - '.github/workflows/ci.yml'
-            web:
-              - 'web/**'
-              - '.github/workflows/ci.yml'
-
   backend:
     name: Backend (pytest)
-    needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,8 +35,6 @@ jobs:
 
   admin:
     name: Admin (lint + build)
-    needs: changes
-    if: ${{ needs.changes.outputs.admin == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -92,8 +63,6 @@ jobs:
 
   web:
     name: Web (build + test)
-    needs: changes
-    if: ${{ needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
