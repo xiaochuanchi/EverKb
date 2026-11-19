@@ -69,8 +69,8 @@ def _main() -> int:
     print("跑三路消融…")
     result = run_ablation(eval_set.items, _dense, _sparse, _hybrid, k=TOP_K)
 
-    # 生成报告
-    _write_report(result, len(eval_set.items), TOP_K)
+    # 生成报告（chunk 数动态传入，避免切块参数调整后报告数字失真）
+    _write_report(result, len(eval_set.items), TOP_K, n_chunks=len(chunks))
     print(f"报告已生成：{REPORT_PATH}")
     for name in ("dense", "sparse", "hybrid"):
         m = result[name]
@@ -78,7 +78,7 @@ def _main() -> int:
     return 0
 
 
-def _write_report(result: dict, n_items: int, top_k: int) -> None:
+def _write_report(result: dict, n_items: int, top_k: int, n_chunks: int) -> None:
     """落 Markdown 报告：对比表 + 结论。"""
     def _pct(x: float) -> str:
         return f"{x * 100:.1f}%"
@@ -113,7 +113,7 @@ def _write_report(result: dict, n_items: int, top_k: int) -> None:
 
 - 日期：2026-11-19
 - 评测集：`data/legal/eval_set.json`（合成法，{n_items} 条，seed=42）
-- 评测库：`kb-eval-legal`（12 部「网络安全与数据合规」法规，126 chunk）
+- 评测库：`kb-eval-legal`（12 部「网络安全与数据合规」法规，{n_chunks} chunk）
 - 三路：纯向量（Milvus COSINE）/ 纯 BM25（jieba 分词）/ RRF 混合（k=60）
 
 ## 指标对比（top_k={top_k}）
@@ -131,7 +131,7 @@ def _write_report(result: dict, n_items: int, top_k: int) -> None:
 - **合成法 ground truth 偏乐观**：`relevant_chunk_ids` 假设「query 应命中来源 chunk 自身」，
   但 LLM 白话改写后的 query 可能命中语义等价的其他 chunk，导致三路指标普遍偏高、
   区分度被压缩。已预留人工抽检 10% 入口修正。
-- **评测集规模有限**：126 chunk 抽样 {n_items} 条，消融实验的分辨率受限于法规包体量。
+- **评测集规模有限**：{n_chunks} chunk 抽样 {n_items} 条，消融实验的分辨率受限于法规包体量。
 - **RRF 参数**：k=60（经典默认值），oversample=4，未做参数扫描。
 """
     REPORT_PATH.write_text(content, encoding="utf-8")

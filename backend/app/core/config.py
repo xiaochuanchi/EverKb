@@ -53,8 +53,8 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 24
 
     # ── 切块 / 上传限制（设计文档 §6.1）──────────────────────────
-    chunk_target_chars: int = 600
-    chunk_overlap_chars: int = 60
+    chunk_target_chars: int = 300
+    chunk_overlap_chars: int = 30
     upload_max_bytes: int = 209_715_200  # 200MB
     web_doc_max_urls: int = 50
 
