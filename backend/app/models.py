@@ -126,6 +126,13 @@ class Feedback:
     BAD = -1
 
 
+class RetrievalMode:
+    """检索模式（二期混合检索）：dense 纯向量 / hybrid 向量+BM25 RRF 融合。"""
+
+    DENSE = "dense"
+    HYBRID = "hybrid"
+
+
 class SpanType:
     """span_type 枚举；tool / agent_step 为二期编排引擎预留（设计文档 §4）。
 
@@ -289,6 +296,9 @@ class App(Base):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="False = 一键停用问答入口")
     top_k: Mapped[int] = mapped_column(Integer, default=5, comment="检索返回条数")
+    retrieval_mode: Mapped[str] = mapped_column(
+        String(16), default=RetrievalMode.DENSE, comment="检索模式：dense 纯向量 / hybrid 向量+BM25 RRF 融合"
+    )
     score_threshold: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(5, 4), comment="相似度阈值（COSINE），NULL = 不过滤"
     )

@@ -10,10 +10,11 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import App, Document, SourceType
+from app.models import App, Document, RetrievalMode, SourceType
 from app.services.embedding import FakeEmbedder
 from app.services.rag import build_context, retrieve
 from app.services.vector import FakeVector, SearchHit, VectorRow
+from app.services.vector.hybrid_index import BM25IndexManager
 
 
 def _make_app(*, kb_ids, top_k=5, score_threshold=None) -> App:
@@ -164,3 +165,71 @@ def test_build_context_snippet_truncates_long_text(pipeline_env):
                       chunk_text=long_text, page_number=None)]
     _, citations = build_context(hits, [doc])
     assert len(citations[0]["snippet"]) < 500
+
+
+# ── 二期混合检索分流（Task 12）──────────────────────────────────
+
+
+def _make_hybrid_app(*, kb_ids, top_k=5, mode=RetrievalMode.HYBRID) -> App:
+    return App(
+        name="混合检索应用",
+        kb_ids=kb_ids,
+        api_key="sk-x",
+        enabled=True,
+        top_k=top_k,
+        retrieval_mode=mode,
+    )
+
+
+def test_retrieve_hybrid_mode_uses_bm25_and_vector(pipeline_env):
+    """hybrid 模式：query 原文 + bm25 索引齐备时走混合检索，返回命中。"""
+    vector = FakeVector(dim=8)
+    embedder = FakeEmbedder(dim=8)
+    session = pipeline_env.session
+
+    doc = _seed_doc(session, kb_id=10)
+    # 稠密路命中（向量同向）
+    _seed_hit(vector, chunk_id=1, doc_id=doc.id, kb_id=10, text="网络安全法 数据 保护")
+    # BM25 索引：同样文本可被关键词命中
+    mgr = BM25IndexManager()
+    from app.models import Chunk
+    chunk = Chunk(id=1, document_id=doc.id, kb_id=10, chunk_index=0, content="网络安全法 数据 保护")
+    mgr.add_chunk(chunk)
+
+    app = _make_hybrid_app(kb_ids=[10])
+    hits = retrieve(_query_vector(embedder), vector, session, app,
+                    query="网络安全法 数据", bm25=mgr)
+    assert len(hits) == 1
+    assert hits[0].chunk_id == 1
+
+
+def test_retrieve_hybrid_mode_falls_back_when_bm25_missing(pipeline_env):
+    """hybrid 模式但 bm25/query 缺失 → 回退纯向量（不报错，向后兼容）。"""
+    vector = FakeVector(dim=8)
+    embedder = FakeEmbedder(dim=8)
+    session = pipeline_env.session
+
+    doc = _seed_doc(session, kb_id=10)
+    _seed_hit(vector, chunk_id=1, doc_id=doc.id, kb_id=10, text="内容")
+
+    app = _make_hybrid_app(kb_ids=[10], mode=RetrievalMode.HYBRID)
+    # 不传 bm25/query → 回退 dense 路径
+    hits = retrieve(_query_vector(embedder), vector, session, app)
+    assert len(hits) == 1
+    assert hits[0].chunk_id == 1
+
+
+def test_retrieve_dense_mode_ignores_bm25(pipeline_env):
+    """dense 模式：即使传入 bm25/query，仍走纯向量（模式优先）。"""
+    vector = FakeVector(dim=8)
+    embedder = FakeEmbedder(dim=8)
+    session = pipeline_env.session
+
+    doc = _seed_doc(session, kb_id=10)
+    _seed_hit(vector, chunk_id=1, doc_id=doc.id, kb_id=10, text="内容")
+
+    app = _make_hybrid_app(kb_ids=[10], mode=RetrievalMode.DENSE)
+    hits = retrieve(_query_vector(embedder), vector, session, app,
+                    query="内容", bm25=BM25IndexManager())
+    assert len(hits) == 1
+    assert hits[0].chunk_id == 1

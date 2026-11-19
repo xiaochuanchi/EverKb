@@ -33,6 +33,7 @@ from app.services.embedding import create_embedder
 from app.services.llm import create_llm
 from app.services.ratelimit import FakeRateLimiter, RedisRateLimiter
 from app.services.vector import create_vector
+from app.services.vector.hybrid_index import BM25IndexManager
 from app.workers import start_worker
 
 
@@ -64,6 +65,13 @@ async def lifespan(app: FastAPI):
     if app.state.llm is None:
         app.state.llm = create_llm(app.state.settings)
     app.state.vector.ensure_collection()
+    # 混合检索 BM25 索引：启动全量加载（未注入时构造；测试可注入自定义管理器）
+    if app.state.bm25 is None:
+        app.state.bm25 = BM25IndexManager()
+    with app.state.session_factory() as session:
+        loaded = app.state.bm25.load_from_db(session)
+    logger = __import__("logging").getLogger("everkb")
+    logger.info("BM25 索引已加载：%d chunk", loaded)
     worker_stop: threading.Event | None = None
     worker_thread: threading.Thread | None = None
     if app.state.settings.worker_enabled:
@@ -72,6 +80,7 @@ async def lifespan(app: FastAPI):
             embedder=app.state.embedder,
             vector=app.state.vector,
             settings=app.state.settings,
+            bm25=app.state.bm25,
         )
         worker_stop = threading.Event()
         worker_thread = start_worker(
@@ -93,6 +102,7 @@ def create_app(
     vector=None,
     rate_limiter=None,
     llm=None,
+    bm25=None,
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="EverKB API", version="0.1.0", lifespan=lifespan)
@@ -107,6 +117,7 @@ def create_app(
     app.state.embedder = embedder  # None 时 lifespan 补真实实现（Task 8 DashScope 兼容端点）
     app.state.vector = vector      # None 时 lifespan 补真实实现（Task 9 Milvus）
     app.state.llm = llm            # None 时 lifespan 补真实实现（Task 16 LLM 客户端）
+    app.state.bm25 = bm25          # None 时 lifespan 补真实实现（二期混合检索 BM25 索引）
     # 限流器：None 时按 redis_url 构造真实实现；测试注入 FakeRateLimiter（Task 19）
     if rate_limiter is not None:
         app.state.rate_limiter = rate_limiter

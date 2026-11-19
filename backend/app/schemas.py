@@ -170,6 +170,7 @@ class AppCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     kb_ids: list[int] = Field(default_factory=list)
     top_k: int = Field(default=5, ge=1, le=100)
+    retrieval_mode: str = Field(default="dense", pattern="^(dense|hybrid)$")
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     prompt_template: str | None = Field(default=None, max_length=10_000)
     model_params: dict = Field(default_factory=dict)
@@ -181,6 +182,7 @@ class AppPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     kb_ids: list[int] | None = None
     top_k: int | None = Field(default=None, ge=1, le=100)
+    retrieval_mode: str | None = Field(default=None, pattern="^(dense|hybrid)$")
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     prompt_template: str | None = Field(default=None, max_length=10_000)
     model_params: dict | None = None
@@ -198,6 +200,7 @@ class AppOut(BaseModel):
     api_key: str
     enabled: bool
     top_k: int
+    retrieval_mode: str = "dense"
     score_threshold: float | None = None
     prompt_template: str | None = None
     model_params: dict
@@ -216,6 +219,7 @@ class AppCreateOut(BaseModel):
     api_key: str  # 明文（仅创建时）
     enabled: bool
     top_k: int
+    retrieval_mode: str = "dense"
     score_threshold: float | None = None
     prompt_template: str | None = None
     model_params: dict

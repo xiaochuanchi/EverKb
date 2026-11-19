@@ -53,12 +53,16 @@ def process_document(
     vector: VectorClient,
     settings: Settings,
     tracer: Tracer | None = None,
+    bm25=None,
 ) -> None:
     """单文档全流程处理：状态机推进到 6，任一步失败折叠为 7 + reason。
 
     tracer 非空时（二期 Task 29），管线各阶段（parse/chunking/embedding/
     vector_insert）埋 span 供 admin Trace 查看器观测；观测写库失败绝不打断
     入库（Tracer.flush 内部 try/except 吞掉，且失败态下 span 随事务回滚）。
+
+    bm25 非空时（二期混合检索），入库成功后增量同步 BM25 索引（新 chunk add、
+    替换清旧 ids），保持索引与 MySQL/Milvus 一致；同步失败不打断入库。
     """
     doc = session.get(Document, doc_id)
     if doc is None:
@@ -218,11 +222,19 @@ def process_document(
         if is_replace and old_ids:
             vector.delete_by_ids(old_ids)
             session.query(Chunk).filter(Chunk.id.in_(old_ids)).delete(synchronize_session=False)
+            if bm25 is not None:
+                bm25.delete_by_ids(old_ids)
 
         doc.chunk_count = len(new_chunks)
         doc.status = DocumentStatus.COMPLETED
         doc.status_reason = None  # 清掉历史失败原因（重试成功场景）
         session.commit()
+        # 混合检索：入库成功后增量同步 BM25 索引（尽力而为，失败不打断入库）
+        if bm25 is not None:
+            try:
+                bm25.add_chunks(new_chunks)
+            except Exception:  # noqa: BLE001 —— 索引同步失败不阻塞主流程
+                pass
         # 观测 span 落库（尽力而为）：flush 内部吞异常，此处再包一层双保险，
         # 观测失败绝不打断已完成入库（红线：观测不阻塞主流程）
         if observe:
@@ -264,12 +276,14 @@ def run_pending(
     vector: VectorClient,
     settings: Settings,
     tracer: Tracer | None = None,
+    bm25=None,
 ) -> int:
     """处理所有 status∈(1, 3) 的文档，返回处理数；单个失败不影响后续。
 
     1 = 上传/重试/替换待处理；3 = md 编辑续跑（PUT /content 置回 3，
     处理从切块阶段开始）。全流程对两者一致，process_document 内部分支。
-    tracer 透传给 process_document（每个文档一个独立入库 trace）。
+    tracer 透传给 process_document（每个文档一个独立入库 trace）；
+    bm25 透传（二期混合检索，入库后增量同步 BM25 索引）。
     """
     with session_factory() as session:
         ids = [
@@ -285,7 +299,7 @@ def run_pending(
                 process_document(
                     session, doc_id,
                     storage=storage, embedder=embedder, vector=vector, settings=settings,
-                    tracer=tracer,
+                    tracer=tracer, bm25=bm25,
                 )
                 processed += 1
             except Exception:  # 业务异常已被 process_document 折叠；此处兜基础设施故障

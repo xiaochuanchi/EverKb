@@ -56,6 +56,7 @@ def chat(
     embedder = state.embedder
     vector = state.vector
     llm = state.llm
+    bm25 = getattr(state, "bm25", None)
 
     # ── 先插 qa_record 拿 id（answer 暂空），trace_id = qa_record.id ──
     record = QaRecord(
@@ -87,8 +88,8 @@ def chat(
         parent_id = es.span_id
 
         with tracer.span("milvus.search", SpanType.RETRIEVAL, parent_id=parent_id) as rs:
-            rs.set_input_summary(f"kb_ids={app.kb_ids}, top_k={app.top_k}")
-            hits = retrieve(query_vector, vector, db, app)
+            rs.set_input_summary(f"kb_ids={app.kb_ids}, top_k={app.top_k}, mode={app.retrieval_mode}")
+            hits = retrieve(query_vector, vector, db, app, query=payload.question, bm25=bm25)
             rs.set_output_summary(f"hits={len(hits)}")
         parent_id = rs.span_id
 

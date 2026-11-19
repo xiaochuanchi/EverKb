@@ -208,6 +208,7 @@ declare namespace Api {
       api_key: string
       enabled: boolean
       top_k: number
+      retrieval_mode: 'dense' | 'hybrid'
       score_threshold: number | null
       prompt_template: string | null
       model_params: Record<string, unknown>
@@ -223,6 +224,7 @@ declare namespace Api {
       name: string
       kb_ids?: number[]
       top_k?: number
+      retrieval_mode?: 'dense' | 'hybrid'
       score_threshold?: number
       prompt_template?: string
       model_params?: Record<string, unknown>
@@ -233,6 +235,7 @@ declare namespace Api {
       name?: string
       kb_ids?: number[]
       top_k?: number
+      retrieval_mode?: 'dense' | 'hybrid'
       score_threshold?: number
       prompt_template?: string
       model_params?: Record<string, unknown>

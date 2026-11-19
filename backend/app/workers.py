@@ -28,7 +28,7 @@ def worker_loop(session_factory, deps, interval: float, stop: threading.Event) -
                 session_factory,
                 storage=deps.storage, embedder=deps.embedder,
                 vector=deps.vector, settings=deps.settings,
-                tracer=tracer,
+                tracer=tracer, bm25=getattr(deps, "bm25", None),
             )
         except Exception:
             logger.exception("worker 轮询失败，下一轮重试")

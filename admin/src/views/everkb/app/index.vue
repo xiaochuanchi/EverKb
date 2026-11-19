@@ -23,6 +23,11 @@
       <template #api_key="{ row }">
         <span class="mono muted">{{ row.api_key }}</span>
       </template>
+      <template #retrieval_mode="{ row }">
+        <ElTag :type="row.retrieval_mode === 'hybrid' ? 'success' : 'info'">
+          {{ row.retrieval_mode === 'hybrid' ? '混合' : '向量' }}
+        </ElTag>
+      </template>
       <template #score_threshold="{ row }">
         <span>{{ row.score_threshold == null ? '-' : row.score_threshold }}</span>
       </template>
@@ -75,6 +80,14 @@
           <ElFormItem label="Top K" prop="top_k">
             <ElInputNumber v-model="form.top_k" :min="1" :max="100" :step="1" class="w-full" />
           </ElFormItem>
+          <ElFormItem label="检索模式" prop="retrieval_mode">
+            <ElSelect v-model="form.retrieval_mode" class="w-full">
+              <ElOption label="纯向量（语义）" value="dense" />
+              <ElOption label="混合检索（语义 + 关键词）" value="hybrid" />
+            </ElSelect>
+          </ElFormItem>
+        </div>
+        <div class="form-grid">
           <ElFormItem label="相似度阈值" prop="score_threshold">
             <ElInputNumber
               v-model="form.score_threshold"
@@ -167,6 +180,7 @@
         { prop: 'name', label: '名称', minWidth: 160 },
         { prop: 'kb_ids', label: '挂载库', width: 110, useSlot: true },
         { prop: 'top_k', label: 'Top K', width: 90 },
+        { prop: 'retrieval_mode', label: '检索模式', width: 100, useSlot: true },
         { prop: 'score_threshold', label: '阈值', width: 90, useSlot: true },
         { prop: 'api_key', label: 'API Key', minWidth: 160, useSlot: true },
         { prop: 'enabled', label: '状态', width: 100, useSlot: true },
@@ -215,6 +229,7 @@
     name: '',
     kb_ids: [] as number[],
     top_k: 5,
+    retrieval_mode: 'dense' as 'dense' | 'hybrid',
     score_threshold: null as number | null,
     prompt_template: '',
     model_params: ''
@@ -256,6 +271,7 @@
     form.name = row.name
     form.kb_ids = [...row.kb_ids]
     form.top_k = row.top_k
+    form.retrieval_mode = row.retrieval_mode || 'dense'
     form.score_threshold = row.score_threshold
     form.prompt_template = row.prompt_template || ''
     form.model_params =
@@ -270,6 +286,7 @@
     form.name = ''
     form.kb_ids = []
     form.top_k = 5
+    form.retrieval_mode = 'dense'
     form.score_threshold = null
     form.prompt_template = ''
     form.model_params = ''
@@ -303,6 +320,7 @@
           name: form.name,
           kb_ids: form.kb_ids,
           top_k: form.top_k,
+          retrieval_mode: form.retrieval_mode,
           score_threshold: form.score_threshold ?? undefined,
           prompt_template: form.prompt_template || undefined,
           model_params: modelParams
@@ -313,6 +331,7 @@
           name: form.name,
           kb_ids: form.kb_ids,
           top_k: form.top_k,
+          retrieval_mode: form.retrieval_mode,
           score_threshold: form.score_threshold ?? undefined,
           prompt_template: form.prompt_template || undefined,
           model_params: modelParams

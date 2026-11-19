@@ -125,3 +125,23 @@ def test_create_app_defaults(client):
     assert body["score_threshold"] is None
     assert body["prompt_template"] is None
     assert body["model_params"] == {}
+    assert body["retrieval_mode"] == "dense"  # 默认纯向量
+
+
+def test_create_app_retrieval_mode_hybrid(client):
+    """显式指定 hybrid：创建后 retrieval_mode 正确回显。"""
+    body = _create(client, "混合应用", retrieval_mode="hybrid").json()["data"]
+    assert body["retrieval_mode"] == "hybrid"
+
+
+def test_create_app_rejects_invalid_retrieval_mode(client):
+    """非法检索模式：422 拒绝。"""
+    assert _create(client, "非法模式", retrieval_mode="bm25").status_code == 422
+
+
+def test_patch_app_retrieval_mode(client):
+    """PATCH 切换检索模式：dense → hybrid。"""
+    app_id = _create(client, "切换模式").json()["data"]["id"]
+    r = client.patch(f"{BASE}/{app_id}", json={"retrieval_mode": "hybrid"})
+    assert r.status_code == 200
+    assert r.json()["data"]["retrieval_mode"] == "hybrid"

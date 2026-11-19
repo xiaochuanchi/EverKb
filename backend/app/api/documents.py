@@ -49,6 +49,11 @@ def _vector(request: Request) -> VectorClient:
     return request.app.state.vector
 
 
+def _bm25(request: Request):
+    """二期混合检索 BM25 索引管理器；未注入时返回 None（停用混合检索不报错）。"""
+    return getattr(request.app.state, "bm25", None)
+
+
 def _get_kb_or_404(db: Session, kb_id: int) -> KnowledgeBase:
     kb = db.get(KnowledgeBase, kb_id)
     if kb is None:
@@ -276,6 +281,7 @@ def patch_document_enabled(
     payload: DocumentEnabledPatch,
     db: Session = Depends(get_db),
     vector: VectorClient = Depends(_vector),
+    bm25=Depends(_bm25),
 ) -> Document:
     """启停文档：MySQL 翻标志 + Milvus 行同步翻。
 
@@ -287,6 +293,8 @@ def patch_document_enabled(
         # set_doc_enabled 对无行文档是空操作，处理中翻标志会被 worker 过期值覆盖（终审 Important #2）
         raise HTTPException(status.HTTP_409_CONFLICT, detail="文档处理中，不可启停")
     vector.set_doc_enabled(doc_id, payload.enabled)
+    if bm25 is not None:
+        bm25.set_doc_enabled(doc_id, payload.enabled)
     doc.enabled = payload.enabled
     db.commit()
     db.refresh(doc)
@@ -299,6 +307,7 @@ def delete_document(
     db: Session = Depends(get_db),
     vector: VectorClient = Depends(_vector),
     storage: StorageClient = Depends(_storage),
+    bm25=Depends(_bm25),
 ) -> None:
     """删除文档（红线 3 顺序钉死）：Milvus → chunk 行 → doc 行（同事务提交）
     → 存储对象最后（source 与 content.md；提交后删，失败只留无害孤儿对象）。"""
@@ -308,6 +317,8 @@ def delete_document(
         raise HTTPException(status.HTTP_409_CONFLICT, detail="文档处理中，暂不可删除")
     oss_key = doc.oss_key
     vector.delete_by_doc(doc_id)
+    if bm25 is not None:
+        bm25.delete_by_doc(doc_id)
     db.query(Chunk).filter(Chunk.document_id == doc_id).delete(synchronize_session=False)
     db.delete(doc)
     db.commit()

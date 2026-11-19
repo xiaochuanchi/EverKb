@@ -15,8 +15,9 @@ doc_name / doc_id / chunk_id / page_number / snippet / score / source_url。
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import App, Document
+from app.models import App, Document, RetrievalMode
 from app.services.vector import SearchHit
+from app.services.vector.hybrid import HybridHit, HybridRetriever
 
 # snippet 截断长度：引用卡片只展示开头，正文全文在上下文中
 _SNIPPET_MAX_CHARS = 200
@@ -36,20 +37,55 @@ def retrieve(
     vector,
     db: Session,
     app: App,
+    *,
+    query: str | None = None,
+    bm25=None,
 ) -> list[SearchHit]:
     """按已嵌入的问题向量检索，二次确认 doc 存在且 enabled，返回有效命中。
 
     query_vector 由编排层在 embedding span 内产出（embed 是独立 span）。
+    检索模式（app.retrieval_mode）分流：
+    - dense：纯向量（既有路径，默认）；
+    - hybrid：向量 + BM25 RRF 融合（二期混合检索，需 query 原文 + bm25 索引）。
+
     零命中 / 全部被过滤 → 空列表（编排层据此走 grounded=false 自由回答分支）。
     """
     if not app.kb_ids:
         return []
-    hits = vector.search(
-        query_vector,
-        app.kb_ids,
-        top_k=app.top_k,
-        threshold=float(app.score_threshold) if app.score_threshold is not None else None,
+
+    use_hybrid = (
+        app.retrieval_mode == RetrievalMode.HYBRID
+        and query is not None
+        and bm25 is not None
     )
+
+    if use_hybrid:
+        retriever = HybridRetriever(vector, bm25)
+        hits: list[SearchHit] = [
+            SearchHit(
+                chunk_id=h.chunk_id,
+                doc_id=h.doc_id,
+                kb_id=h.kb_id,
+                score=h.score,
+                chunk_text=h.chunk_text,
+                page_number=h.page_number,
+            )
+            for h in retriever.search(
+                query,
+                query_vector,
+                kb_ids=app.kb_ids,
+                top_k=app.top_k,
+                threshold=float(app.score_threshold) if app.score_threshold is not None else None,
+            )
+        ]
+    else:
+        hits = vector.search(
+            query_vector,
+            app.kb_ids,
+            top_k=app.top_k,
+            threshold=float(app.score_threshold) if app.score_threshold is not None else None,
+        )
+
     if not hits:
         return []
     # 二次确认：命中 chunk 的 doc 必须存在且 enabled（防删除/停用后孤儿向量误引）
