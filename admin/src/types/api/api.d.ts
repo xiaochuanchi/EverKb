@@ -440,6 +440,13 @@ declare namespace Api {
       created_at: string
     }
 
+    /** 单个 KPI 环比（近 7 天 vs 前 7 天） */
+    interface DashboardKpiTrend {
+      current: number
+      previous: number
+      pct_change: number | null
+    }
+
     /** GET /dashboard 响应（后端 DashboardOut） */
     interface Dashboard {
       kb_count: number
@@ -449,10 +456,12 @@ declare namespace Api {
       qa_count: number
       total_cost: number
       failed_doc_count: number
+      drift_doc_count: number
       qa_trend: DashboardTrendPoint[]
       doc_status: DashboardDocStatusItem[]
       retrieval_modes: DashboardRetrievalModeItem[]
       recent_qa: DashboardRecentQa[]
+      kpi_trend: Record<string, DashboardKpiTrend>
     }
   }
 

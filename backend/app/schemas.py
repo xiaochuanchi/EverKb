@@ -442,6 +442,18 @@ class DashboardRecentQa(BaseModel):
     created_at: datetime
 
 
+class DashboardKpiTrend(BaseModel):
+    """单个 KPI 指标的环比：近 7 天 vs 前 7 天。
+
+    current / previous 为两周期新增量（花费为两周期金额合计），
+    pct_change 为环比涨跌百分比（无上周期基数为 0 时记 None，前端显示「—」）。
+    """
+
+    current: int | float
+    previous: int | float
+    pct_change: float | None = None
+
+
 class DashboardOut(BaseModel):
     """GET /dashboard 响应体：概况页全部统计。"""
 
@@ -452,7 +464,10 @@ class DashboardOut(BaseModel):
     qa_count: int
     total_cost: float
     failed_doc_count: int
+    drift_doc_count: int
     qa_trend: list[DashboardTrendPoint]
     doc_status: list[DashboardDocStatusItem]
     retrieval_modes: list[DashboardRetrievalModeItem]
     recent_qa: list[DashboardRecentQa]
+    # 环比（近 7 天 vs 前 7 天新增量 / 金额）
+    kpi_trend: dict[str, DashboardKpiTrend]

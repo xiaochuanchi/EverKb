@@ -1,23 +1,34 @@
 <template>
   <div class="dashboard-page">
-    <!-- 顶部 KPI 统计卡片（可点击下钻） -->
+    <!-- 顶部 KPI 统计卡片（可点击下钻，含环比） -->
     <div class="stats-grid">
       <div
         v-for="card in statCards"
         :key="card.label"
-        class="stat-card-link"
+        class="stat-card art-card"
         :class="{ 'has-alert': card.alert }"
         @click="goTo(card.path)"
       >
-        <ArtStatsCard
-          :title="card.label"
-          :count="card.value"
-          :description="card.description"
-          :icon="card.icon"
-          :icon-style="card.iconStyle"
-          :decimals="card.decimals"
-          show-arrow
-        />
+        <div class="stat-top">
+          <div class="stat-icon" :class="card.iconStyle">
+            <ArtSvgIcon :icon="card.icon" />
+          </div>
+          <div class="stat-value">
+            <ArtCountTo
+              :target="card.value"
+              :duration="1200"
+              :decimals="card.decimals ?? 0"
+              separator=","
+            />
+          </div>
+          <el-icon class="stat-arrow"><ArrowRight /></el-icon>
+        </div>
+        <div class="stat-bottom">
+          <span class="stat-label">{{ card.label }}</span>
+          <span class="stat-mom" :class="momClass(card.trend)">
+            {{ momLabel(card.trend) }}
+          </span>
+        </div>
         <ElBadge v-if="card.alert" :value="card.alert" class="stat-badge" type="danger" />
       </div>
     </div>
@@ -114,8 +125,8 @@
 
 <script setup lang="ts">
   import { useRouter } from 'vue-router'
+  import { ArrowRight } from '@element-plus/icons-vue'
   import ArtRingChart from '@/components/core/charts/art-ring-chart/index.vue'
-  import ArtStatsCard from '@/components/core/cards/art-stats-card/index.vue'
   import { fetchDashboard } from '@/api/everkb/dashboard'
   import { fetchAblationResult } from '@/api/everkb/eval'
   import { useChartComponent } from '@/hooks/core/useChart'
@@ -131,59 +142,79 @@
 
   const toPercent = (v: number) => `${(v * 100).toFixed(1)}%`
 
+  // ── 环比辅助（红涨绿跌，A 股惯例）─────────────────────────────
+  const momLabel = (trend?: Api.EverKB.DashboardKpiTrend) => {
+    if (!trend || trend.pct_change == null) return '—'
+    const pct = (trend.pct_change * 100).toFixed(0)
+    return trend.pct_change >= 0 ? `+${pct}%` : `${pct}%`
+  }
+  const momClass = (trend?: Api.EverKB.DashboardKpiTrend) => {
+    if (!trend || trend.pct_change == null) return 'mom-flat'
+    return trend.pct_change >= 0 ? 'mom-up' : 'mom-down'
+  }
+
   // ── KPI 卡片配置 ──────────────────────────────────────────────
   const statCards = computed(() => {
     const d = dashboard.value
+    const kpi = d?.kpi_trend ?? {}
     return [
       {
         label: '知识库',
         value: d?.kb_count ?? 0,
-        description: '知识库总数',
         icon: 'ri:database-2-line',
         iconStyle: 'bg-primary',
-        path: '/everkb/knowledge'
+        path: '/everkb/knowledge',
+        trend: kpi.kb
       },
       {
         label: '文档',
         value: d?.doc_count ?? 0,
-        description: '文档总数',
         icon: 'ri:file-text-line',
         iconStyle: 'bg-info',
         path: '/everkb/document',
+        trend: kpi.doc,
         alert: d?.failed_doc_count ? `${d.failed_doc_count} 失败` : undefined
       },
       {
         label: 'Chunk',
         value: d?.chunk_count ?? 0,
-        description: '切块总数',
         icon: 'ri:stack-line',
         iconStyle: 'bg-success',
-        path: '/everkb/chunk'
+        path: '/everkb/chunk',
+        trend: kpi.chunk
       },
       {
         label: '应用',
         value: d?.app_count ?? 0,
-        description: '应用总数',
         icon: 'ri:robot-2-line',
         iconStyle: 'bg-secondary',
-        path: '/everkb/app'
+        path: '/everkb/app',
+        trend: kpi.app
       },
       {
         label: '问答',
         value: d?.qa_count ?? 0,
-        description: '累计问答数',
         icon: 'ri:chat-3-line',
         iconStyle: 'bg-warning',
-        path: '/everkb/qa-record'
+        path: '/everkb/qa-record',
+        trend: kpi.qa
       },
       {
         label: '花费',
         value: d?.total_cost ?? 0,
-        description: '累计花费（¥）',
         icon: 'ri:money-cny-circle-line',
         iconStyle: 'bg-danger',
         path: '/everkb/trace',
-        decimals: 4
+        decimals: 4,
+        trend: kpi.cost
+      },
+      {
+        label: '漂移',
+        value: d?.drift_doc_count ?? 0,
+        icon: 'ri:git-repository-commits-line',
+        iconStyle: 'bg-danger',
+        path: '/everkb/reconcile',
+        alert: d?.drift_doc_count ? `${d.drift_doc_count} 文档漂移` : undefined
       }
     ]
   })
@@ -280,6 +311,9 @@
     if (d?.failed_doc_count) {
       items.push({ label: '失败文档', count: d.failed_doc_count, path: '/everkb/document' })
     }
+    if (d?.drift_doc_count) {
+      items.push({ label: '向量漂移', count: d.drift_doc_count, path: '/everkb/reconcile' })
+    }
     return items
   })
 
@@ -318,13 +352,85 @@
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 12px;
       margin-bottom: 16px;
 
-      .stat-card-link {
+      .stat-card {
         position: relative;
         cursor: pointer;
+        padding: 14px;
+        transition: transform 0.2s;
+
+        &:hover {
+          transform: translateY(-3px);
+        }
+
+        .stat-top {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+
+          .stat-icon {
+            flex-shrink: 0;
+            width: 38px;
+            height: 38px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 18px;
+          }
+
+          .stat-value {
+            flex: 1;
+            min-width: 0;
+            font-size: 22px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .stat-arrow {
+            flex-shrink: 0;
+            color: var(--art-gray-400, #c0c4cc);
+            font-size: 14px;
+          }
+        }
+
+        .stat-bottom {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 12px;
+
+          .stat-label {
+            font-size: 13px;
+            color: var(--art-gray-500, #909399);
+          }
+
+          .stat-mom {
+            font-size: 12px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+
+            &.mom-up {
+              color: var(--el-color-danger, #f56c6c);
+            }
+
+            &.mom-down {
+              color: var(--el-color-success, #67c23a);
+            }
+
+            &.mom-flat {
+              color: var(--art-gray-400, #c0c4cc);
+            }
+          }
+        }
 
         .stat-badge {
           position: absolute;
