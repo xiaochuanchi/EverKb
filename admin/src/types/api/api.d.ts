@@ -409,6 +409,51 @@ declare namespace Api {
       seed: number
       results: AblationResultItem[]
     }
+
+    /* ============ 平台概况（dashboard） ============ */
+
+    /** 单日问答趋势点 */
+    interface DashboardTrendPoint {
+      date: string
+      count: number
+    }
+
+    /** 文档状态分布项 */
+    interface DashboardDocStatusItem {
+      status: number
+      count: number
+    }
+
+    /** 检索模式分布项 */
+    interface DashboardRetrievalModeItem {
+      mode: string
+      count: number
+    }
+
+    /** 最近问答摘要 */
+    interface DashboardRecentQa {
+      id: number
+      app_id: number
+      question: string
+      grounded: boolean
+      latency_ms: number
+      created_at: string
+    }
+
+    /** GET /dashboard 响应（后端 DashboardOut） */
+    interface Dashboard {
+      kb_count: number
+      doc_count: number
+      chunk_count: number
+      app_count: number
+      qa_count: number
+      total_cost: number
+      failed_doc_count: number
+      qa_trend: DashboardTrendPoint[]
+      doc_status: DashboardDocStatusItem[]
+      retrieval_modes: DashboardRetrievalModeItem[]
+      recent_qa: DashboardRecentQa[]
+    }
   }
 
   /** 系统管理类型 */

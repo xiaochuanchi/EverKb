@@ -405,3 +405,54 @@ class AblationResultOut(BaseModel):
     eval_kb: str
     seed: int
     results: list[AblationResultItem]
+
+
+# ── 平台概况（dashboard 运营驾驶舱）──────────────────────────────
+
+
+class DashboardTrendPoint(BaseModel):
+    """单日问答趋势点。"""
+
+    date: str  # YYYY-MM-DD
+    count: int
+
+
+class DashboardDocStatusItem(BaseModel):
+    """文档状态分布项（status → 数量）。"""
+
+    status: int
+    count: int
+
+
+class DashboardRetrievalModeItem(BaseModel):
+    """检索模式分布项（dense/hybrid → 应用数）。"""
+
+    mode: str
+    count: int
+
+
+class DashboardRecentQa(BaseModel):
+    """最近问答摘要（概况页列表用）。"""
+
+    id: int
+    app_id: int
+    question: str
+    grounded: bool
+    latency_ms: int
+    created_at: datetime
+
+
+class DashboardOut(BaseModel):
+    """GET /dashboard 响应体：概况页全部统计。"""
+
+    kb_count: int
+    doc_count: int
+    chunk_count: int
+    app_count: int
+    qa_count: int
+    total_cost: float
+    failed_doc_count: int
+    qa_trend: list[DashboardTrendPoint]
+    doc_status: list[DashboardDocStatusItem]
+    retrieval_modes: list[DashboardRetrievalModeItem]
+    recent_qa: list[DashboardRecentQa]
