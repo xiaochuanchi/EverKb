@@ -12,7 +12,7 @@ from sqlalchemy.schema import CreateTable
 
 from app import models
 from app.core.db import Base, init_db, make_engine, make_session_factory
-from app.models import AdminUser, App, Chunk, Document, KnowledgeBase, QaRecord, TraceSpan
+from app.models import AdminUser, App, Chunk, Document, KnowledgeBase, Notification, QaRecord, TraceSpan
 
 ALL_TABLES = {
     "admin_user",
@@ -22,6 +22,7 @@ ALL_TABLES = {
     "chunk",
     "qa_record",
     "trace_span",
+    "notification",
 }
 
 

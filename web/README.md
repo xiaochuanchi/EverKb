@@ -1,10 +1,9 @@
 # EverKB 用户前端（web）
 
-Vue 3 + Vite 单页应用，面向最终用户，产品侧唯一界面：**问答 + 引用展示**（调用 `POST /api/apps/{app_id}/chat`，SSE 流式返回，流结束接收 grounded 与 citations）。不提供文档管理能力（设计文档 §2.4 非目标）。
+Vue 3 + Vite 单页应用，面向最终用户，产品侧唯一界面：**问答 + 引用展示**（调用 `POST /api/apps/{app_id}/chat`，SSE 流式返回，流结束接收 grounded 与 citations）。不提供文档管理能力。
 
 - 与 [`admin/`](../admin/README.md) 各自独立 package.json，不上 monorepo workspace
-- 需求与排期基线：[`docs/2026-11-17-web前端-技术栈与功能需求排期.md`](../docs/2026-11-17-web前端-技术栈与功能需求排期.md)
-- 后端契约：API 统一信封见 [`docs/2026-11-17-api统一信封-设计文档.md`](../docs/2026-11-17-api统一信封-设计文档.md)
+- 后端契约：响应统一为 `{"code": 0, "message": "ok", "data": ...}` 信封（`/health` 豁免）；鉴权走 `X-API-Key` 请求头
 
 ## 技术栈
 

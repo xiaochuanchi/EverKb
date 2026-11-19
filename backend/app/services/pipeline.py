@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.storage import StorageClient
-from app.models import Chunk, Document, DocumentStatus, SourceType, SpanType
+from app.models import Chunk, Document, DocumentStatus, Notification, NotificationType, SourceType, SpanType
 from app.parsers import get_parser
 from app.parsers.webpage import fetch_and_extract
 from app.services.chunking import chunk_markdown, estimate_tokens
@@ -228,6 +228,7 @@ def process_document(
         doc.chunk_count = len(new_chunks)
         doc.status = DocumentStatus.COMPLETED
         doc.status_reason = None  # 清掉历史失败原因（重试成功场景）
+        _notify_doc_completed(session, doc)
         session.commit()
         # 混合检索：入库成功后增量同步 BM25 索引（尽力而为，失败不打断入库）
         if bm25 is not None:
@@ -236,12 +237,15 @@ def process_document(
             except Exception:  # noqa: BLE001 —— 索引同步失败不阻塞主流程
                 pass
         # 观测 span 落库（尽力而为）：flush 内部吞异常，此处再包一层双保险，
-        # 观测失败绝不打断已完成入库（红线：观测不阻塞主流程）
+        # 观测失败绝不打断已完成入库（红线：观测不阻塞主流程）。
+        # 注意：flush 仅 add + flush，须再 commit 一次才真正落库（对齐 open._persist），
+        # 否则 span 随本短会话关闭回滚丢失。
         if observe:
             try:
                 tracer.flush(session)
+                session.commit()
             except Exception:  # noqa: BLE001 —— 观测写库失败必须吞掉
-                pass
+                session.rollback()
     except Exception as e:  # 宽捕获转失败态（Task 8 移交裁定：管线兜底是本层责任）
         session.rollback()
         # identity-map 缓存不可信：session.get 命中已删行的缓存实例时，commit 会
@@ -266,6 +270,11 @@ def process_document(
         if result.rowcount == 0:
             # 行在 probe 与 UPDATE 之间又被删：删除已收敛，无需补偿
             return
+        # 失败通知：读回 doc 名拼标题（Core UPDATE 后 name 仍可查）
+        failed = session.get(Document, doc_id)
+        if failed is not None:
+            _notify_doc_failed(session, failed, failed.status_reason)
+            session.commit()
 
 
 def run_pending(
@@ -305,6 +314,32 @@ def run_pending(
             except Exception:  # 业务异常已被 process_document 折叠；此处兜基础设施故障
                 continue
     return processed
+
+
+def _notify_doc_completed(session: Session, doc: Document) -> None:
+    """文档处理完成 → 落一条通知（随主事务提交，失败不打断入库）。"""
+    session.add(
+        Notification(
+            type=NotificationType.DOC_COMPLETED,
+            title=f"文档「{doc.name}」处理完成",
+            content=f"已切 {doc.chunk_count} 个分块并完成向量化。",
+            resource_type="document",
+            resource_id=doc.id,
+        )
+    )
+
+
+def _notify_doc_failed(session: Session, doc: Document, reason: str | None) -> None:
+    """文档处理失败 → 落一条通知（随主事务提交，失败不打断入库）。"""
+    session.add(
+        Notification(
+            type=NotificationType.DOC_FAILED,
+            title=f"文档「{doc.name}」处理失败",
+            content=reason or "未知原因",
+            resource_type="document",
+            resource_id=doc.id,
+        )
+    )
 
 
 def _is_replace(session: Session, doc: Document) -> bool:

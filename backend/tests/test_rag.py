@@ -233,3 +233,39 @@ def test_retrieve_dense_mode_ignores_bm25(pipeline_env):
                     query="内容", bm25=BM25IndexManager())
     assert len(hits) == 1
     assert hits[0].chunk_id == 1
+
+
+# ── Prompt 渲染兜底（历史脏数据防护）──────────────────────────────
+
+
+def test_render_prompt_uses_default_when_template_missing_question(pipeline_env):
+    """自定义模板缺 {question}（历史脏数据）→ 回退系统默认模板，问题/上下文仍注入。"""
+    from app.api.open import _render_prompt
+
+    app = App(name="坏模板", kb_ids=[], api_key="sk-x", enabled=True,
+              top_k=5, prompt_template="回答用户的问题")
+    prompt = _render_prompt(app, "参考资料正文", "前端为什么要转全栈")
+    assert "{question}" not in prompt  # 渲染后已替换，不应残留占位符
+    assert "前端为什么要转全栈" in prompt
+    assert "参考资料正文" in prompt
+
+
+def test_render_prompt_uses_default_when_template_missing_context(pipeline_env):
+    """自定义模板缺 {context} → 回退系统默认模板。"""
+    from app.api.open import _render_prompt
+
+    app = App(name="缺上下文", kb_ids=[], api_key="sk-x", enabled=True,
+              top_k=5, prompt_template="请回答：{question}")
+    prompt = _render_prompt(app, "参考资料正文", "前端为什么要转全栈")
+    assert "前端为什么要转全栈" in prompt
+    assert "参考资料正文" in prompt
+
+
+def test_render_prompt_uses_custom_template_when_valid(pipeline_env):
+    """合法模板（含 {context} 与 {question}）→ 正常渲染，不回退。"""
+    from app.api.open import _render_prompt
+
+    app = App(name="合法模板", kb_ids=[], api_key="sk-x", enabled=True,
+              top_k=5, prompt_template="资料：{context}\n问题：{question}")
+    prompt = _render_prompt(app, "参考资料正文", "前端为什么要转全栈")
+    assert prompt == "资料：参考资料正文\n问题：前端为什么要转全栈"

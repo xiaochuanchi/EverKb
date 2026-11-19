@@ -328,6 +328,9 @@ class QaRecord(Base):
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，兼作 Trace id")
     app_id: Mapped[int] = mapped_column(BigInteger, comment="所属应用 id（无物理外键，索引 ix_qa_record_app_created）")
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="True = 管理员在后台抽屉模拟问答（区别于真实用户，供统计/追溯隔离）"
+    )
     user_key: Mapped[str] = mapped_column(String(128), comment="调用方透传的最终用户标识")
     session_id: Mapped[Optional[str]] = mapped_column(
         String(64), comment="多轮会话 id；一期单轮恒 NULL，二期启用（届时补索引）"
@@ -390,6 +393,43 @@ class TraceSpan(Base):
     gen_ai_usage_tokens_out: Mapped[Optional[int]] = mapped_column(Integer, comment="输出 token 数（GenAI 语义规范）")
     cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6), comment="本步花费")
     extra: Mapped[Optional[dict]] = mapped_column(JSON, comment="各 span_type 私有扩展字段")
+    created_at: Mapped[datetime] = mapped_column(
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
+    )
+
+
+class NotificationType:
+    """通知类型（admin 通知中心）。"""
+
+    DOC_COMPLETED = "doc_completed"  # 文档处理完成
+    DOC_FAILED = "doc_failed"        # 文档处理失败
+
+
+class Notification(Base):
+    """系统通知（admin 通知中心）。
+
+    来源：文档处理管线完成/失败节点落一条通知，管理员在右上角通知中心查看，
+    点击跳转到对应文档。resource_type/resource_id 定位资源，is_read 标记已读。
+    """
+
+    __tablename__ = "notification"
+    __table_args__ = (
+        Index("ix_notification_is_read", "is_read"),
+        Index("ix_notification_created", "created_at"),
+        {"comment": "系统通知（admin 通知中心；文档处理完成/失败落通知，可标记已读）"},
+    )
+
+    id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    type: Mapped[str] = mapped_column(
+        String(32), comment="类型：doc_completed 文档处理完成 / doc_failed 文档处理失败"
+    )
+    title: Mapped[str] = mapped_column(String(256), comment="通知标题")
+    content: Mapped[str] = mapped_column(String(1024), comment="通知正文（补充说明）")
+    resource_type: Mapped[str] = mapped_column(
+        String(32), default="document", comment="关联资源类型（跳转用）"
+    )
+    resource_id: Mapped[Optional[int]] = mapped_column(BigInteger, comment="关联资源 id（如文档 id）")
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否已读")
     created_at: Mapped[datetime] = mapped_column(
         CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )

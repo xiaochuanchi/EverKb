@@ -165,8 +165,14 @@ def _sse(data: dict) -> str:
 
 
 def _render_prompt(app: App, context: str, question: str) -> str:
-    """按 app.prompt_template（或系统默认）渲染 Prompt。"""
+    """按 app.prompt_template（或系统默认）渲染 Prompt。
+
+    兜底：若自定义模板缺失 {question}/{context} 占位符（历史脏数据），回退系统默认模板，
+    防止上下文与问题无法注入、LLM 收到残缺 prompt。
+    """
     template = app.prompt_template or DEFAULT_PROMPT_TEMPLATE
+    if "{question}" not in template or "{context}" not in template:
+        template = DEFAULT_PROMPT_TEMPLATE
     return template.format(context=context, question=question)
 
 

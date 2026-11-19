@@ -8,11 +8,11 @@
 
       <ElTag
         size="small"
-        :type="TYPE_META[span.span_type]?.tag || 'info'"
+        :type="TYPE_TAG[span.span_type] || 'info'"
         effect="light"
         class="span-type"
       >
-        {{ TYPE_META[span.span_type]?.label || span.span_type }}
+        {{ spanTypeLabel(span.span_type) }}
       </ElTag>
 
       <span class="span-name" :title="span.name">{{ span.name }}</span>
@@ -35,11 +35,11 @@
 
     <div v-if="expanded" class="span-detail">
       <div v-if="span.input_summary" class="span-summary">
-        <span class="span-summary-label">输入</span>
+        <span class="span-summary-label">{{ $t('everkb.trace.input') }}</span>
         <span class="span-summary-text">{{ span.input_summary }}</span>
       </div>
       <div v-if="span.output_summary" class="span-summary">
-        <span class="span-summary-label">输出</span>
+        <span class="span-summary-label">{{ $t('everkb.trace.output') }}</span>
         <span class="span-summary-text">{{ span.output_summary }}</span>
       </div>
     </div>
@@ -51,25 +51,40 @@
 </template>
 
 <script setup lang="ts">
+  import { useI18n } from 'vue-i18n'
   import { ArrowRight } from '@element-plus/icons-vue'
 
   defineOptions({ name: 'SpanTreeNode' })
 
   const props = defineProps<{ span: Api.EverKB.TraceSpanNode }>()
 
-  const TYPE_META: Record<
-    string,
-    { label: string; tag: 'info' | 'success' | 'primary' | 'warning' | 'danger' }
-  > = {
-    embedding: { label: '嵌入', tag: 'primary' },
-    retrieval: { label: '检索', tag: 'success' },
-    db: { label: '数据库', tag: 'info' },
-    llm: { label: 'LLM', tag: 'warning' },
-    tool: { label: '工具', tag: 'info' },
-    agent_step: { label: '编排', tag: 'info' },
-    parse: { label: '解析', tag: 'primary' },
-    chunking: { label: '切块', tag: 'primary' },
-    vector_insert: { label: '向量入库', tag: 'success' }
+  const { t } = useI18n()
+
+  const TYPE_TAG: Record<string, 'info' | 'success' | 'primary' | 'warning' | 'danger'> = {
+    embedding: 'primary',
+    retrieval: 'success',
+    db: 'info',
+    llm: 'warning',
+    tool: 'info',
+    agent_step: 'info',
+    parse: 'primary',
+    chunking: 'primary',
+    vector_insert: 'success'
+  }
+
+  const spanTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      embedding: t('everkb.trace.spanTypeEmbedding'),
+      retrieval: t('everkb.trace.spanTypeRetrieval'),
+      db: t('everkb.trace.spanTypeDatabase'),
+      llm: 'LLM',
+      tool: t('everkb.trace.spanTypeTool'),
+      agent_step: t('everkb.trace.spanTypeOrchestration'),
+      parse: t('everkb.trace.spanTypeParse'),
+      chunking: t('everkb.trace.spanTypeChunking'),
+      vector_insert: t('everkb.trace.spanTypeVectorInsert')
+    }
+    return labels[type] ?? type
   }
 
   const expanded = ref(true)

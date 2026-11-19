@@ -5,19 +5,22 @@
       <ElButton circle @click="handleBack">
         <el-icon><ArrowLeft /></el-icon>
       </ElButton>
-      <span class="doc-title" :title="doc?.name">{{ doc?.name || '文档编辑器' }}</span>
+      <span class="doc-title" :title="doc?.name">{{ doc?.name || $t('everkb.editor.title') }}</span>
       <ElTag v-if="doc" :type="STATUS_META[doc.status]?.tag || 'info'" size="small">
-        {{ STATUS_META[doc.status]?.label || `未知(${doc.status})` }}
+        {{
+          STATUS_META[doc.status]?.label ||
+          $t('everkb.editor.unknownStatus', { status: doc.status })
+        }}
       </ElTag>
-      <ElTooltip v-if="doc?.edited" content="该文档的 markdown 已被人工编辑过" placement="top">
-        <ElTag type="warning" size="small" effect="plain">已编辑</ElTag>
+      <ElTooltip v-if="doc?.edited" :content="$t('everkb.editor.editedTip')" placement="top">
+        <ElTag type="warning" size="small" effect="plain">{{ $t('everkb.editor.edited') }}</ElTag>
       </ElTooltip>
 
       <div class="toolbar-spacer" />
 
-      <span v-if="polling" class="poll-hint">保存后重新切块向量化中…</span>
+      <span v-if="polling" class="poll-hint">{{ $t('everkb.editor.pollHint') }}</span>
       <ElButton type="primary" :loading="saving" :disabled="polling || !doc" @click="handleSave">
-        保存
+        {{ $t('everkb.editor.save') }}
       </ElButton>
     </div>
 
@@ -31,7 +34,7 @@
         :theme="settingStore.isDark ? 'dark' : 'light'"
         :footers="['markdownTotal', 'scrollSwitch']"
         :toolbars="toolbars"
-        placeholder="编辑文档 markdown 内容…"
+        :placeholder="$t('everkb.editor.editorPlaceholder')"
         :style="{ height: 'calc(100vh - 160px)' }"
         @on-save="handleSave"
       />
@@ -41,6 +44,7 @@
 
 <script setup lang="ts">
   import { ElMessage } from 'element-plus'
+  import { useI18n } from 'vue-i18n'
   import { ArrowLeft } from '@element-plus/icons-vue'
   import { MdEditor, type ToolbarNames } from 'md-editor-v3'
   import 'md-editor-v3/lib/style.css'
@@ -53,19 +57,19 @@
   const route = useRoute()
   const router = useRouter()
   const settingStore = useSettingStore()
+  const { t } = useI18n()
 
-  const STATUS_META: Record<
-    number,
-    { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }
-  > = {
-    [DOC_STATUS.Uploaded]: { label: '已上传', tag: 'info' },
-    [DOC_STATUS.Parsing]: { label: '解析中', tag: 'primary' },
-    [DOC_STATUS.Extracted]: { label: '已抽取', tag: 'primary' },
-    [DOC_STATUS.Chunked]: { label: '已切块', tag: 'primary' },
-    [DOC_STATUS.Vectorizing]: { label: '向量化中', tag: 'warning' },
-    [DOC_STATUS.Completed]: { label: '已完成', tag: 'success' },
-    [DOC_STATUS.Failed]: { label: '失败', tag: 'danger' }
-  }
+  const STATUS_META = computed<
+    Record<number, { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }>
+  >(() => ({
+    [DOC_STATUS.Uploaded]: { label: t('everkb.editor.statusUploaded'), tag: 'info' },
+    [DOC_STATUS.Parsing]: { label: t('everkb.editor.statusParsing'), tag: 'primary' },
+    [DOC_STATUS.Extracted]: { label: t('everkb.editor.statusExtracted'), tag: 'primary' },
+    [DOC_STATUS.Chunked]: { label: t('everkb.editor.statusChunked'), tag: 'primary' },
+    [DOC_STATUS.Vectorizing]: { label: t('everkb.editor.statusVectorizing'), tag: 'warning' },
+    [DOC_STATUS.Completed]: { label: t('everkb.editor.statusCompleted'), tag: 'success' },
+    [DOC_STATUS.Failed]: { label: t('everkb.editor.statusFailed'), tag: 'danger' }
+  }))
 
   const docId = computed(() => Number(route.query.docId) || 0)
   const doc = ref<Api.EverKB.Document | null>(null)
@@ -99,24 +103,24 @@
 
   const loadDoc = async () => {
     if (!docId.value) {
-      loadError.value = '缺少 docId 参数'
+      loadError.value = t('everkb.editor.missingDocId')
       return
     }
     try {
       doc.value = await fetchDocumentDetail(docId.value)
     } catch {
-      loadError.value = '文档不存在或已被删除'
+      loadError.value = t('everkb.editor.notFound')
       return
     }
     if (!editable(doc.value)) {
-      loadError.value = '文档尚未生成 markdown 或处理中，暂不可编辑'
+      loadError.value = t('everkb.editor.notEditable')
       return
     }
     try {
       const res = await fetchDocumentContent(docId.value)
       content.value = res.content
     } catch {
-      loadError.value = 'markdown 内容加载失败'
+      loadError.value = t('everkb.editor.contentLoadFailed')
     }
   }
 
@@ -143,10 +147,14 @@
         doc.value = fresh
         if (fresh.status === DOC_STATUS.Completed) {
           stopPolling()
-          ElMessage.success('重新切块向量化完成')
+          ElMessage.success(t('everkb.editor.reprocessCompleted'))
         } else if (fresh.status === DOC_STATUS.Failed) {
           stopPolling()
-          ElMessage.error(`重新处理失败：${fresh.status_reason || '未知原因'}`)
+          ElMessage.error(
+            t('everkb.editor.reprocessFailed', {
+              reason: fresh.status_reason || t('everkb.editor.unknownReason')
+            })
+          )
         }
       } catch {
         stopPolling()

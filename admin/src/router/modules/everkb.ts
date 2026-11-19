@@ -40,6 +40,7 @@ export const everkbRoutes: AppRouteRecord = {
       meta: { title: 'menus.everkb.documentEditor', isHide: true, keepAlive: false }
     },
     {
+      // chunk 浏览：/everkb/chunk?docId=xxx，无 docId 时展示文档选择器（知识库 → 文档）
       path: 'chunk',
       name: 'EverKBChunk',
       component: '/everkb/chunk',

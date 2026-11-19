@@ -3,27 +3,28 @@
     <!-- 工具条：说明 + 重新扫描 -->
     <div class="toolbar art-card-sm">
       <div class="toolbar-left">
-        <ElTooltip
-          content="扫描状态为「已完成」的文档，检测 chunk 未向量化或 MySQL/Milvus 数量不一致的漂移。"
-          placement="bottom"
-        >
+        <ElTooltip :content="$t('everkb.reconcile.scanTip')" placement="bottom">
           <el-icon class="toolbar-info"><InfoFilled /></el-icon>
         </ElTooltip>
-        <span class="toolbar-label">向量漂移扫描</span>
+        <span class="toolbar-label">{{ $t('everkb.reconcile.scanLabel') }}</span>
         <ElTag
           v-if="!loading"
           size="small"
           :type="items.length ? 'danger' : 'success'"
           effect="plain"
         >
-          {{ items.length ? `发现 ${items.length} 项漂移` : '无漂移' }}
+          {{
+            items.length
+              ? $t('everkb.reconcile.driftFound', { n: items.length })
+              : $t('everkb.reconcile.noDrift')
+          }}
         </ElTag>
       </div>
 
       <div class="toolbar-right">
         <ElButton type="primary" :loading="loading" @click="scan">
           <el-icon style="margin-right: 4px"><Refresh /></el-icon>
-          重新扫描
+          {{ $t('everkb.reconcile.rescan') }}
         </ElButton>
       </div>
     </div>
@@ -34,14 +35,14 @@
       :data="data"
       :loading="loading"
       empty-height="420"
-      emptyText="未发现向量漂移"
+      :empty-text="$t('everkb.reconcile.emptyText')"
     >
       <template #doc_id="{ row }">
         <ElButton link type="primary" @click="goDocument(row.doc_id)"> #{{ row.doc_id }}</ElButton>
       </template>
       <template #issue="{ row }">
         <ElTag size="small" :type="ISSUE_META[row.issue]?.tag || 'info'" effect="plain">
-          {{ ISSUE_META[row.issue]?.label ?? row.issue }}
+          {{ ISSUE_META[row.issue] ? t(ISSUE_META[row.issue].label) : row.issue }}
         </ElTag>
       </template>
     </ArtTable>
@@ -50,6 +51,7 @@
 
 <script setup lang="ts">
   import { InfoFilled, Refresh } from '@element-plus/icons-vue'
+  import { useI18n } from 'vue-i18n'
   import { fetchReconciliation } from '@/api/everkb/reconcile'
   import type { ColumnOption } from '@/types/component'
 
@@ -57,17 +59,19 @@
 
   type ReconcileRow = Api.EverKB.ReconciliationItem
 
+  const { t } = useI18n()
+
   const ISSUE_META: Record<string, { label: string; tag: 'danger' | 'warning' | 'info' }> = {
-    unvectorized: { label: 'chunk 未向量化', tag: 'warning' },
-    count_mismatch: { label: '向量数量不一致', tag: 'danger' }
+    unvectorized: { label: 'everkb.reconcile.issueUnvectorized', tag: 'warning' },
+    count_mismatch: { label: 'everkb.reconcile.issueCountMismatch', tag: 'danger' }
   }
 
   const loading = ref(false)
   const items = ref<ReconcileRow[]>([])
 
   const columns: ColumnOption<ReconcileRow>[] = [
-    { prop: 'doc_id', label: '文档 ID', width: 120, useSlot: true },
-    { prop: 'issue', label: '漂移类型', width: 200, useSlot: true }
+    { prop: 'doc_id', label: t('everkb.reconcile.columnDocId'), width: 120, useSlot: true },
+    { prop: 'issue', label: t('everkb.reconcile.columnIssueType'), width: 200, useSlot: true }
   ]
 
   const data = computed(() => items.value)

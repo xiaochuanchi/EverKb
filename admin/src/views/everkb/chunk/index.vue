@@ -5,12 +5,14 @@
       <div class="toolbar-left">
         <ElButton link type="primary" @click="goBack">
           <el-icon style="margin-right: 4px"><Back /></el-icon>
-          返回文档
+          {{ $t('everkb.chunk.backToDoc') }}
         </ElButton>
         <span class="toolbar-divider" />
-        <span class="toolbar-label">文档</span>
+        <span class="toolbar-label">{{ $t('everkb.chunk.docLabel') }}</span>
         <span class="doc-title">{{ docName || `#${docId}` }}</span>
-        <ElTag v-if="total > 0" size="small" effect="plain">共 {{ total }} 个切块</ElTag>
+        <ElTag v-if="total > 0" size="small" effect="plain">{{
+          $t('everkb.chunk.totalCount', { n: total })
+        }}</ElTag>
       </div>
 
       <div class="toolbar-right">
@@ -20,16 +22,32 @@
       </div>
     </div>
 
-    <!-- 缺少 docId 提示 -->
-    <ElAlert
-      v-if="!docId"
-      title="缺少文档参数"
-      description="请从「文档管理」页点击某文档的「块」按钮进入，URL 需携带 docId 参数。"
-      type="warning"
-      :closable="false"
-      show-icon
-      style="margin-bottom: 12px"
-    />
+    <!-- 无 docId：文档选择器（知识库 → 文档 两级联动） -->
+    <div v-if="!docId" class="picker-card art-card-sm">
+      <div class="picker-title">{{ $t('everkb.chunk.pickDocTitle') }}</div>
+      <div class="picker-row">
+        <ElSelect
+          v-model="pickerKbId"
+          :loading="kbLoading"
+          :placeholder="$t('everkb.document.selectKnowledgeBase')"
+          style="width: 240px"
+          @change="handlePickerKbChange"
+        >
+          <ElOption v-for="kb in kbList" :key="kb.id" :label="kb.name" :value="kb.id" />
+        </ElSelect>
+        <ElSelect
+          v-model="pickerDocId"
+          :loading="docLoading"
+          :placeholder="$t('everkb.chunk.pickDocPlaceholder')"
+          :disabled="!pickerKbId"
+          filterable
+          style="width: 320px"
+          @change="handlePickerDocChange"
+        >
+          <ElOption v-for="d in pickerDocList" :key="d.id" :label="d.name" :value="d.id" />
+        </ElSelect>
+      </div>
+    </div>
 
     <ArtTable
       :columns="columns"
@@ -38,7 +56,7 @@
       :pagination="pagination"
       :paginationOptions="{ pageSizes: [20, 50, 100], hideOnSinglePage: false }"
       empty-height="420"
-      emptyText="暂无切块"
+      :emptyText="$t('everkb.chunk.emptyText')"
       @pagination:size-change="handleSizeChange"
       @pagination:current-change="handleCurrentChange"
     >
@@ -49,40 +67,58 @@
         <div class="chunk-content" :title="row.content">{{ row.content }}</div>
       </template>
       <template #page_number="{ row }">
-        <span v-if="row.page_number != null">第 {{ row.page_number }} 页</span>
+        <span v-if="row.page_number != null">{{
+          $t('everkb.chunk.pageNumber', { n: row.page_number })
+        }}</span>
         <span v-else class="muted">-</span>
       </template>
       <template #vectorized="{ row }">
         <ElTag size="small" :type="row.vectorized ? 'success' : 'warning'" effect="plain">
-          {{ row.vectorized ? '已向量化' : '未向量化' }}
+          {{ row.vectorized ? $t('everkb.chunk.vectorized') : $t('everkb.chunk.notVectorized') }}
         </ElTag>
       </template>
       <template #actions="{ row }">
-        <ElButton link type="primary" @click="openChunk(row)">查看</ElButton>
+        <ElButton link type="primary" @click="openChunk(row)">{{
+          $t('everkb.chunk.view')
+        }}</ElButton>
       </template>
     </ArtTable>
 
     <!-- 切块详情抽屉 -->
-    <ElDrawer v-model="detailVisible" title="切块详情" size="50%">
+    <ElDrawer v-model="detailVisible" :title="$t('everkb.chunk.detailTitle')" size="50%">
       <template v-if="currentChunk">
         <ElDescriptions :column="2" border size="small" style="margin-bottom: 16px">
-          <ElDescriptionsItem label="切块 ID">{{ currentChunk.id }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="序号">#{{ currentChunk.chunk_index }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="页码">
-            {{ currentChunk.page_number != null ? `第 ${currentChunk.page_number} 页` : '-' }}
+          <ElDescriptionsItem :label="$t('everkb.chunk.chunkId')">{{
+            currentChunk.id
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('everkb.chunk.indexLabel')"
+            >#{{ currentChunk.chunk_index }}</ElDescriptionsItem
+          >
+          <ElDescriptionsItem :label="$t('everkb.chunk.pageLabel')">
+            {{
+              currentChunk.page_number != null
+                ? $t('everkb.chunk.pageNumber', { n: currentChunk.page_number })
+                : '-'
+            }}
           </ElDescriptionsItem>
-          <ElDescriptionsItem label="Token 数">{{ currentChunk.token_count }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="向量化">
+          <ElDescriptionsItem :label="$t('everkb.chunk.tokenCount')">{{
+            currentChunk.token_count
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem :label="$t('everkb.chunk.vectorizedLabel')">
             <ElTag
               size="small"
               :type="currentChunk.vectorized ? 'success' : 'warning'"
               effect="plain"
             >
-              {{ currentChunk.vectorized ? '已向量化' : '未向量化' }}
+              {{
+                currentChunk.vectorized
+                  ? $t('everkb.chunk.vectorized')
+                  : $t('everkb.chunk.notVectorized')
+              }}
             </ElTag>
           </ElDescriptionsItem>
         </ElDescriptions>
-        <div class="detail-title">正文</div>
+        <div class="detail-title">{{ $t('everkb.chunk.contentLabel') }}</div>
         <div class="detail-content">{{ currentChunk.content }}</div>
       </template>
     </ElDrawer>
@@ -91,12 +127,16 @@
 
 <script setup lang="ts">
   import { Back, Refresh } from '@element-plus/icons-vue'
+  import { useI18n } from 'vue-i18n'
   import { fetchChunkPage } from '@/api/everkb/chunk'
-  import { fetchDocumentDetail } from '@/api/document'
+  import { fetchDocumentDetail, fetchDocumentPage } from '@/api/document'
+  import { fetchKbList } from '@/api/kb'
   import type { ColumnOption } from '@/types/component'
   import { useTable } from '@/hooks/core/useTable'
 
   defineOptions({ name: 'EverKBChunk' })
+
+  const { t } = useI18n()
 
   type ChunkRow = Api.EverKB.Chunk
 
@@ -107,6 +147,57 @@
   const docName = ref('')
   const total = ref(0)
 
+  // ── 无 docId 时的文档选择器（知识库 → 文档 两级联动）──────────────
+  const kbList = ref<Api.EverKB.KB[]>([])
+  const kbLoading = ref(false)
+  const pickerKbId = ref<number | null>(null)
+  const pickerDocList = ref<Api.EverKB.Document[]>([])
+  const docLoading = ref(false)
+  const pickerDocId = ref<number | null>(null)
+
+  const loadKbList = async () => {
+    kbLoading.value = true
+    try {
+      kbList.value = await fetchKbList()
+      if (!pickerKbId.value && kbList.value.length) {
+        pickerKbId.value = kbList.value[0].id
+        void loadDocList()
+      }
+    } catch {
+      // 错误已由 http 层弹出
+    } finally {
+      kbLoading.value = false
+    }
+  }
+
+  const loadDocList = async () => {
+    if (!pickerKbId.value) {
+      pickerDocList.value = []
+      pickerDocId.value = null
+      return
+    }
+    docLoading.value = true
+    try {
+      const page = await fetchDocumentPage(pickerKbId.value, { page: 1, size: 100 })
+      pickerDocList.value = page.items
+      pickerDocId.value = null
+    } catch {
+      // 错误已由 http 层弹出
+    } finally {
+      docLoading.value = false
+    }
+  }
+
+  const handlePickerKbChange = () => {
+    void loadDocList()
+  }
+
+  const handlePickerDocChange = (val: number) => {
+    if (!val) return
+    // 选中文档后，把 docId 写入 URL，复用后续 docId 驱动的加载逻辑
+    router.replace({ path: '/everkb/chunk', query: { docId: String(val) } })
+  }
+
   // ── 表格 ─────────────────────────────────────────────────────────
   const apiFn = (params: Record<string, unknown>) => fetchChunkPage(docId.value, params)
 
@@ -116,6 +207,7 @@
     columns,
     pagination,
     fetchData,
+    getData,
     refreshData,
     handleSizeChange,
     handleCurrentChange
@@ -127,12 +219,18 @@
       immediate: false,
       columnsFactory: (): ColumnOption<ChunkRow>[] => [
         { prop: 'id', label: 'ID', width: 90 },
-        { prop: 'chunk_index', label: '序号', width: 90, useSlot: true },
-        { prop: 'content', label: '正文', minWidth: 360, useSlot: true },
-        { prop: 'page_number', label: '页码', width: 110, useSlot: true },
+        { prop: 'chunk_index', label: t('everkb.chunk.indexLabel'), width: 90, useSlot: true },
+        { prop: 'content', label: t('everkb.chunk.contentLabel'), minWidth: 360, useSlot: true },
+        { prop: 'page_number', label: t('everkb.chunk.pageLabel'), width: 110, useSlot: true },
         { prop: 'token_count', label: 'Token', width: 90 },
-        { prop: 'vectorized', label: '向量化', width: 110, useSlot: true },
-        { prop: 'actions', label: '操作', width: 80, fixed: 'right', useSlot: true }
+        { prop: 'vectorized', label: t('everkb.chunk.vectorizedLabel'), width: 110, useSlot: true },
+        {
+          prop: 'actions',
+          label: t('everkb.chunk.actions'),
+          width: 80,
+          fixed: 'right',
+          useSlot: true
+        }
       ]
     },
     performance: { enableCache: false }
@@ -150,9 +248,28 @@
   }
 
   onMounted(async () => {
-    if (!docId.value) return
+    if (!docId.value) {
+      // 无 docId：展示文档选择器，让管理员选择要浏览切块的文档
+      void loadKbList()
+      return
+    }
     await loadDocName()
     void fetchData()
+  })
+
+  // ── docId 变化时重新加载（keepAlive 缓存下，选择器改 query 不会重挂载）──
+  watch(docId, async (val, old) => {
+    if (val === old) return
+    if (!val) {
+      // 清掉 docId（如用户手动清 query）：回到选择器
+      docName.value = ''
+      total.value = 0
+      data.value = []
+      void loadKbList()
+      return
+    }
+    await loadDocName()
+    void getData()
   })
 
   // ── 返回文档页 ───────────────────────────────────────────────────
@@ -204,6 +321,24 @@
       .doc-title {
         font-weight: 600;
         font-size: 14px;
+      }
+    }
+
+    .picker-card {
+      padding: 20px 16px;
+      margin-bottom: 12px;
+
+      .picker-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 12px;
+      }
+
+      .picker-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
       }
     }
   }

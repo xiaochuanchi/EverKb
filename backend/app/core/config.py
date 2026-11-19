@@ -1,6 +1,6 @@
 """应用配置：全字段集中于 Settings，来源优先级 环境变量 > .env > 默认值。
 
-对应 Plan 1 Task 1 Step 5。字段分组与 docs/2026-11-15-backend-技术决策记录.md 对齐。
+对应 Plan 1 Task 1 Step 5。字段分组与 `.env.example` 一一对应。
 
 .env 路径锚定仓库根（backend/app/core/config.py → parents[3]），
 不随启动时的工作目录变化——PyCharm 直接运行脚本也能读到配置。

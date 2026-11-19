@@ -2,7 +2,7 @@
   <div class="trace-page">
     <ElTabs v-model="activeTab" class="trace-tabs">
       <!-- Tab 1: Trace 列表（复用 records，点开进详情） -->
-      <ElTabPane label="Trace 列表" name="list">
+      <ElTabPane :label="$t('everkb.trace.tabList')" name="list">
         <ArtTable
           :columns="columns"
           :data="data"
@@ -10,7 +10,7 @@
           :pagination="pagination"
           :paginationOptions="{ pageSizes: [20, 50, 100], hideOnSinglePage: false }"
           empty-height="420"
-          emptyText="暂无问答记录（问答记录即 Trace 入口）"
+          :emptyText="$t('everkb.trace.emptyQaRecords')"
           @pagination:size-change="handleSizeChange"
           @pagination:current-change="handleCurrentChange"
         >
@@ -18,25 +18,34 @@
             <span class="cell-ellipsis" :title="row.question">{{ row.question }}</span>
           </template>
           <template #actions="{ row }">
-            <ElButton link type="primary" @click="openDetail(row)">查看 Trace</ElButton>
+            <ElButton link type="primary" @click="openDetail(row)">{{
+              $t('everkb.trace.viewTrace')
+            }}</ElButton>
           </template>
         </ArtTable>
       </ElTabPane>
 
       <!-- Tab 2: 聚合分析 -->
-      <ElTabPane label="聚合分析" name="aggregate">
-        <div v-if="aggLoading" v-loading="true" element-loading-text="加载中" class="agg-loading" />
+      <ElTabPane :label="$t('everkb.trace.tabAggregate')" name="aggregate">
+        <div
+          v-if="aggLoading"
+          v-loading="true"
+          :element-loading-text="$t('everkb.trace.loading')"
+          class="agg-loading"
+        />
         <template v-else-if="aggregation">
           <div class="agg-section">
-            <div class="agg-section-title">最慢调用 Top {{ aggregation.slowest?.length ?? 0 }}</div>
+            <div class="agg-section-title">{{
+              $t('everkb.trace.slowestTop', { n: aggregation.slowest?.length ?? 0 })
+            }}</div>
             <ElTable :data="aggregation.slowest" size="small" border>
               <ElTableColumn prop="trace_id" label="Trace" width="90" />
-              <ElTableColumn prop="name" label="Span 名" min-width="180" />
-              <ElTableColumn label="类型" width="100">
+              <ElTableColumn prop="name" :label="$t('everkb.trace.spanName')" min-width="180" />
+              <ElTableColumn :label="$t('everkb.trace.type')" width="100">
                 <template #default="{ row }">{{ spanTypeLabel(row.span_type) }}</template>
               </ElTableColumn>
               <ElTableColumn
-                label="耗时"
+                :label="$t('everkb.trace.latency')"
                 width="110"
                 sortable
                 :sort-method="(a, b) => a.latency_ms - b.latency_ms"
@@ -47,41 +56,39 @@
                   >
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="Token(入/出)" width="130">
+              <ElTableColumn :label="$t('everkb.trace.tokensInOut')" width="130">
                 <template #default="{ row }">
                   {{ row.gen_ai_usage_tokens_in ?? '-' }} / {{ row.gen_ai_usage_tokens_out ?? '-' }}
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="花费" width="110">
+              <ElTableColumn :label="$t('everkb.trace.cost')" width="110">
                 <template #default="{ row }">{{
                   row.cost == null ? '-' : `¥${row.cost.toFixed(6)}`
                 }}</template>
               </ElTableColumn>
-              <ElTableColumn label="时间" width="170">
+              <ElTableColumn :label="$t('everkb.trace.time')" width="170">
                 <template #default="{ row }">{{ formatTime(row.start_time) }}</template>
               </ElTableColumn>
             </ElTable>
           </div>
 
           <div class="agg-section">
-            <div class="agg-section-title"
-              >各 Span 类型指标（P95 耗时 / 平均 Token / 平均花费）</div
-            >
+            <div class="agg-section-title">{{ $t('everkb.trace.typeMetrics') }}</div>
             <ElTable :data="aggregation.by_type" size="small" border>
-              <ElTableColumn label="类型" width="140">
+              <ElTableColumn :label="$t('everkb.trace.type')" width="140">
                 <template #default="{ row }">{{ spanTypeLabel(row.span_type) }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="count" label="数量" width="90" />
-              <ElTableColumn label="P95 耗时" width="120">
+              <ElTableColumn prop="count" :label="$t('everkb.trace.count')" width="90" />
+              <ElTableColumn :label="$t('everkb.trace.p95Latency')" width="120">
                 <template #default="{ row }">{{ row.p95_latency_ms ?? '-' }}ms</template>
               </ElTableColumn>
-              <ElTableColumn label="平均 Token(入)" width="130">
+              <ElTableColumn :label="$t('everkb.trace.avgTokensIn')" width="130">
                 <template #default="{ row }">{{ row.avg_tokens_in ?? '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn label="平均 Token(出)" width="130">
+              <ElTableColumn :label="$t('everkb.trace.avgTokensOut')" width="130">
                 <template #default="{ row }">{{ row.avg_tokens_out ?? '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn label="平均花费" width="130">
+              <ElTableColumn :label="$t('everkb.trace.avgCost')" width="130">
                 <template #default="{ row }">{{
                   row.avg_cost == null ? '-' : `¥${row.avg_cost.toFixed(6)}`
                 }}</template>
@@ -92,7 +99,7 @@
       </ElTabPane>
 
       <!-- Tab 3: 入库链路（二期 Task 29：文档解析管线 span） -->
-      <ElTabPane label="入库链路" name="pipeline">
+      <ElTabPane :label="$t('everkb.trace.tabPipeline')" name="pipeline">
         <ArtTable
           :columns="pipelineColumns"
           :data="pipelineData"
@@ -100,7 +107,7 @@
           :pagination="pipelinePagination"
           :paginationOptions="{ pageSizes: [20, 50, 100], hideOnSinglePage: false }"
           empty-height="420"
-          emptyText="暂无入库链路 Trace（文档入库后自动产生 parse/chunking/embedding/vector_insert span）"
+          :emptyText="$t('everkb.trace.emptyPipeline')"
           @pagination:size-change="handlePipelineSizeChange"
           @pagination:current-change="handlePipelineCurrentChange"
         >
@@ -109,7 +116,7 @@
           </template>
           <template #doc_name="{ row }">
             <ElButton link type="primary" @click="openPipelineDetail(row)">
-              {{ row.doc_name ?? `文档 #${row.doc_id}` }}
+              {{ row.doc_name ?? $t('everkb.trace.docFallback', { id: row.doc_id }) }}
             </ElButton>
           </template>
           <template #doc_status="{ row }">{{ docStatusLabel(row.doc_status) }}</template>
@@ -117,7 +124,9 @@
           <template #total_latency_ms="{ row }">{{ row.total_latency_ms }}ms</template>
           <template #last_start_time="{ row }">{{ formatTime(row.last_start_time) }}</template>
           <template #actions="{ row }">
-            <ElButton link type="primary" @click="openPipelineDetail(row)">查看 Span 树</ElButton>
+            <ElButton link type="primary" @click="openPipelineDetail(row)">{{
+              $t('everkb.trace.viewSpanTree')
+            }}</ElButton>
           </template>
         </ArtTable>
       </ElTabPane>
@@ -126,6 +135,7 @@
 </template>
 
 <script setup lang="ts">
+  import { useI18n } from 'vue-i18n'
   import { useRouter } from 'vue-router'
   import { fetchQaRecordPage } from '@/api/everkb/qa-record'
   import { fetchPipelineTraces, fetchTraceAggregation } from '@/api/everkb/trace'
@@ -137,6 +147,7 @@
   type QaRow = Api.EverKB.QaRecord
   type PipelineRow = Api.EverKB.PipelineTraceItem
 
+  const { t } = useI18n()
   const router = useRouter()
   const activeTab = ref('list')
 
@@ -152,27 +163,34 @@
         immediate: true,
         columnsFactory: (): ColumnOption<QaRow>[] => [
           { prop: 'id', label: 'ID', width: 80 },
-          { prop: 'question', label: '问题', minWidth: 240, useSlot: true },
-          { prop: 'app_id', label: '应用', width: 90 },
+          { prop: 'question', label: t('everkb.trace.question'), minWidth: 240, useSlot: true },
+          { prop: 'app_id', label: t('everkb.trace.app'), width: 90 },
           {
             prop: 'grounded',
-            label: '依据',
+            label: t('everkb.trace.grounded'),
             width: 110,
-            formatter: (row) => (row.grounded ? '基于知识库' : '自由回答')
+            formatter: (row) =>
+              row.grounded ? t('everkb.trace.groundedYes') : t('everkb.trace.groundedNo')
           },
           {
             prop: 'latency_ms',
-            label: '耗时',
+            label: t('everkb.trace.latency'),
             width: 100,
             formatter: (row) => `${row.latency_ms}ms`
           },
           {
             prop: 'created_at',
-            label: '时间',
+            label: t('everkb.trace.time'),
             width: 170,
             formatter: (row) => row.created_at?.replace('T', ' ').slice(0, 19) || '-'
           },
-          { prop: 'actions', label: '操作', width: 110, fixed: 'right', useSlot: true }
+          {
+            prop: 'actions',
+            label: t('everkb.trace.actions'),
+            width: 110,
+            fixed: 'right',
+            useSlot: true
+          }
         ]
       },
       performance: { enableCache: false }
@@ -197,34 +215,37 @@
     }
   }
 
-  const SPAN_TYPE_LABEL: Record<string, string> = {
-    embedding: '嵌入',
-    retrieval: '检索',
-    db: '数据库',
-    llm: 'LLM',
-    tool: '工具',
-    agent_step: '编排',
-    parse: '解析',
-    chunking: '切块',
-    vector_insert: '向量入库'
+  const spanTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      embedding: t('everkb.trace.spanTypeEmbedding'),
+      retrieval: t('everkb.trace.spanTypeRetrieval'),
+      db: t('everkb.trace.spanTypeDatabase'),
+      llm: 'LLM',
+      tool: t('everkb.trace.spanTypeTool'),
+      agent_step: t('everkb.trace.spanTypeOrchestration'),
+      parse: t('everkb.trace.spanTypeParse'),
+      chunking: t('everkb.trace.spanTypeChunking'),
+      vector_insert: t('everkb.trace.spanTypeVectorInsert')
+    }
+    return labels[type] ?? type
   }
-
-  const spanTypeLabel = (t: string) => SPAN_TYPE_LABEL[t] ?? t
 
   const formatTime = (iso: string) => iso?.replace('T', ' ').slice(0, 19) || '-'
 
   // ── Tab 3: 入库链路（管线 Trace）─────────────────────────────
-  const DOC_STATUS_LABEL: Record<number, string> = {
-    1: '已上传',
-    2: '解析中',
-    3: '已提取',
-    4: '已切块',
-    5: '向量化中',
-    6: '已完成',
-    7: '失败'
+  const docStatusLabel = (s: number | null) => {
+    if (s == null) return '-'
+    const labels: Record<number, string> = {
+      1: t('everkb.trace.docStatusUploaded'),
+      2: t('everkb.trace.docStatusParsing'),
+      3: t('everkb.trace.docStatusExtracted'),
+      4: t('everkb.trace.docStatusChunked'),
+      5: t('everkb.trace.docStatusVectorizing'),
+      6: t('everkb.trace.docStatusCompleted'),
+      7: t('everkb.trace.docStatusFailed')
+    }
+    return labels[s] ?? t('everkb.trace.docStatusUnknown', { n: s })
   }
-  const docStatusLabel = (s: number | null) =>
-    s == null ? '-' : DOC_STATUS_LABEL[s] ?? `状态 ${s}`
 
   const pipelineApiFn = (params: Record<string, unknown>) => fetchPipelineTraces(params)
 
@@ -244,12 +265,23 @@
       immediate: false,
       columnsFactory: (): ColumnOption<PipelineRow>[] => [
         { prop: 'trace_id', label: 'Trace ID', width: 100, useSlot: true },
-        { prop: 'doc_name', label: '文档', minWidth: 200, useSlot: true },
-        { prop: 'doc_status', label: '状态', width: 100, useSlot: true },
-        { prop: 'span_count', label: 'Span 数', width: 90, useSlot: true },
-        { prop: 'total_latency_ms', label: '总耗时', width: 110, useSlot: true },
-        { prop: 'last_start_time', label: '最近时间', width: 170, useSlot: true },
-        { prop: 'actions', label: '操作', width: 120, fixed: 'right', useSlot: true }
+        { prop: 'doc_name', label: t('everkb.trace.doc'), minWidth: 200, useSlot: true },
+        { prop: 'doc_status', label: t('everkb.trace.status'), width: 100, useSlot: true },
+        { prop: 'span_count', label: t('everkb.trace.spanCount'), width: 90, useSlot: true },
+        {
+          prop: 'total_latency_ms',
+          label: t('everkb.trace.totalLatency'),
+          width: 110,
+          useSlot: true
+        },
+        { prop: 'last_start_time', label: t('everkb.trace.lastTime'), width: 170, useSlot: true },
+        {
+          prop: 'actions',
+          label: t('everkb.trace.actions'),
+          width: 120,
+          fixed: 'right',
+          useSlot: true
+        }
       ]
     },
     performance: { enableCache: false }

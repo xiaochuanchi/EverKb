@@ -3,21 +3,21 @@
     <!-- 工具条：知识库选择 + 状态过滤 + 上传/网页/刷新 -->
     <div class="toolbar art-card-sm">
       <div class="toolbar-left">
-        <span class="toolbar-label">知识库</span>
+        <span class="toolbar-label">{{ $t('everkb.document.knowledgeBase') }}</span>
         <ElSelect
           v-model="currentKbId"
           :loading="kbLoading"
-          placeholder="选择知识库"
+          :placeholder="$t('everkb.document.selectKnowledgeBase')"
           style="width: 220px"
           @change="handleKbChange"
         >
           <ElOption v-for="kb in kbList" :key="kb.id" :label="kb.name" :value="kb.id" />
         </ElSelect>
 
-        <span class="toolbar-label">状态</span>
+        <span class="toolbar-label">{{ $t('everkb.document.status') }}</span>
         <ElSelect
           v-model="statusFilter"
-          placeholder="全部"
+          :placeholder="$t('everkb.document.all')"
           clearable
           style="width: 140px"
           @change="handleStatusFilter"
@@ -30,19 +30,24 @@
           />
         </ElSelect>
 
-        <ElTooltip content="有处理中的文档时每 5 秒自动刷新" placement="top">
-          <ElSwitch v-model="autoRefresh" inline-prompt active-text="自动" inactive-text="手动" />
+        <ElTooltip :content="$t('everkb.document.autoRefreshTip')" placement="top">
+          <ElSwitch
+            v-model="autoRefresh"
+            inline-prompt
+            :active-text="$t('everkb.document.auto')"
+            :inactive-text="$t('everkb.document.manual')"
+          />
         </ElTooltip>
       </div>
 
       <div class="toolbar-right">
         <ElButton type="primary" :disabled="!currentKbId" @click="uploadVisible = true">
           <el-icon class="mr-1"><Upload /></el-icon>
-          上传文档
+          {{ $t('everkb.document.uploadDocument') }}
         </ElButton>
         <ElButton :disabled="!currentKbId" @click="openWebDialog">
           <el-icon class="mr-1"><Link /></el-icon>
-          添加网页
+          {{ $t('everkb.document.addWebpage') }}
         </ElButton>
         <ElButton circle :disabled="!currentKbId" @click="refreshData">
           <el-icon><Refresh /></el-icon>
@@ -57,7 +62,9 @@
       :pagination="pagination"
       :paginationOptions="{ pageSizes: [20, 50, 100], hideOnSinglePage: false }"
       empty-height="420"
-      :emptyText="currentKbId ? '该库暂无文档' : '请先选择知识库'"
+      :emptyText="
+        currentKbId ? $t('everkb.document.emptyNoDocs') : $t('everkb.document.emptySelectKb')
+      "
       @pagination:size-change="handleSizeChange"
       @pagination:current-change="handleCurrentChange"
     >
@@ -65,7 +72,9 @@
         <div class="doc-name">
           <el-icon class="doc-name-icon"><Document /></el-icon>
           <span class="doc-name-text" :title="row.name">{{ row.name }}</span>
-          <ElTag v-if="row.edited" size="small" type="warning" effect="plain">已编辑</ElTag>
+          <ElTag v-if="row.edited" size="small" type="warning" effect="plain">
+            {{ $t('everkb.document.edited') }}
+          </ElTag>
           <ElTag v-if="row.version > 1" size="small" effect="plain">v{{ row.version }}</ElTag>
         </div>
       </template>
@@ -82,7 +91,10 @@
           </ElTag>
         </ElTooltip>
         <ElTag v-else :type="STATUS_META[row.status]?.tag || 'info'" size="small">
-          {{ STATUS_META[row.status]?.label || `未知(${row.status})` }}
+          {{
+            STATUS_META[row.status]?.label ||
+            $t('everkb.document.unknownStatus', { status: row.status })
+          }}
         </ElTag>
       </template>
 
@@ -92,7 +104,11 @@
           effect="plain"
           :type="row.source_type === DOC_SOURCE_TYPE.Webpage ? 'success' : 'info'"
         >
-          {{ row.source_type === DOC_SOURCE_TYPE.Webpage ? '网页' : '上传' }}
+          {{
+            row.source_type === DOC_SOURCE_TYPE.Webpage
+              ? $t('everkb.document.sourceWebpage')
+              : $t('everkb.document.sourceUpload')
+          }}
         </ElTag>
       </template>
 
@@ -111,7 +127,7 @@
           type="primary"
           @click="openEditor(row)"
         >
-          编辑
+          {{ $t('everkb.document.edit') }}
         </ElButton>
         <ElButton
           v-if="row.source_type === DOC_SOURCE_TYPE.Upload && !isProcessing(row)"
@@ -119,7 +135,7 @@
           type="primary"
           @click="openReplace(row)"
         >
-          替换
+          {{ $t('everkb.document.replace') }}
         </ElButton>
         <ElButton
           v-if="row.status === DOC_STATUS.Failed"
@@ -127,25 +143,32 @@
           type="warning"
           @click="handleRetry(row)"
         >
-          重试
+          {{ $t('everkb.document.retry') }}
         </ElButton>
-        <ElButton link type="primary" @click="openPreview(row)">预览</ElButton>
+        <ElButton link type="primary" @click="openPreview(row)">
+          {{ $t('everkb.document.preview') }}
+        </ElButton>
         <ElButton
           v-if="row.status >= DOC_STATUS.Extracted"
           link
           type="primary"
           @click="openChunks(row)"
         >
-          块
+          {{ $t('everkb.document.chunks') }}
         </ElButton>
         <ElButton v-if="!isProcessing(row)" link type="danger" @click="handleDelete(row)">
-          删除
+          {{ $t('everkb.document.delete') }}
         </ElButton>
       </template>
     </ArtTable>
 
     <!-- 上传文档弹窗 -->
-    <ElDialog v-model="uploadVisible" title="上传文档" width="480px" :close-on-click-modal="false">
+    <ElDialog
+      v-model="uploadVisible"
+      :title="$t('everkb.document.uploadDocument')"
+      width="480px"
+      :close-on-click-modal="false"
+    >
       <ElUpload
         drag
         :auto-upload="false"
@@ -155,27 +178,34 @@
         accept=".docx,.pdf,.xlsx,.txt,.md,.csv,.html"
       >
         <el-icon :size="40" class="upload-icon"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
+        <div class="el-upload__text"
+          >{{ $t('everkb.document.dragHere') }}
+          <em>{{ $t('everkb.document.clickSelect') }}</em></div
+        >
         <template #tip>
-          <div class="el-upload__tip"
-            >支持 docx / pdf / xlsx / txt / md / csv / html，单文件不超过 10MB</div
-          >
+          <div class="el-upload__tip">{{ $t('everkb.document.uploadTip') }}</div>
         </template>
       </ElUpload>
       <template #footer>
-        <ElButton @click="uploadVisible = false">取消</ElButton>
+        <ElButton @click="uploadVisible = false">{{ $t('everkb.document.cancel') }}</ElButton>
         <ElButton type="primary" :loading="uploading" :disabled="!uploadFile" @click="handleUpload">
-          上传
+          {{ $t('everkb.document.upload') }}
         </ElButton>
       </template>
     </ElDialog>
 
     <!-- 替换重传弹窗 -->
-    <ElDialog v-model="replaceVisible" title="替换文件" width="480px" :close-on-click-modal="false">
-      <p class="replace-tip">
-        覆盖 <b>{{ replacingDoc?.name }}</b> 的源文件，版本 +1
-        并重新处理；处理期间旧版内容持续供检索。
-      </p>
+    <ElDialog
+      v-model="replaceVisible"
+      :title="$t('everkb.document.replaceFile')"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <I18nT keypath="everkb.document.replaceTip" tag="p" class="replace-tip" scope="global">
+        <template #name>
+          <b>{{ replacingDoc?.name }}</b>
+        </template>
+      </I18nT>
       <ElUpload
         drag
         :auto-upload="false"
@@ -185,61 +215,74 @@
         accept=".docx,.pdf,.xlsx,.txt,.md,.csv,.html"
       >
         <el-icon :size="40" class="upload-icon"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽新文件到此处，或 <em>点击选择</em></div>
+        <div class="el-upload__text"
+          >{{ $t('everkb.document.dragNewHere') }}
+          <em>{{ $t('everkb.document.clickSelect') }}</em></div
+        >
         <template #tip>
-          <div class="el-upload__tip"
-            >支持 docx / pdf / xlsx / txt / md / csv / html，单文件不超过 10MB</div
-          >
+          <div class="el-upload__tip">{{ $t('everkb.document.uploadTip') }}</div>
         </template>
       </ElUpload>
       <template #footer>
-        <ElButton @click="replaceVisible = false">取消</ElButton>
+        <ElButton @click="replaceVisible = false">{{ $t('everkb.document.cancel') }}</ElButton>
         <ElButton
           type="primary"
           :loading="replacing"
           :disabled="!replaceFile"
           @click="handleReplace"
         >
-          替换
+          {{ $t('everkb.document.replace') }}
         </ElButton>
       </template>
     </ElDialog>
 
     <!-- 批量添加网页弹窗 -->
-    <ElDialog v-model="webVisible" title="批量添加网页" width="560px" :close-on-click-modal="false">
+    <ElDialog
+      v-model="webVisible"
+      :title="$t('everkb.document.addWebpages')"
+      width="560px"
+      :close-on-click-modal="false"
+    >
       <ElInput
         v-model="webUrlsText"
         type="textarea"
         :rows="8"
-        placeholder="每行一个 URL（http/https），一次最多 50 条"
+        :placeholder="$t('everkb.document.webUrlsPlaceholder')"
       />
-      <p class="web-count">已输入 {{ webUrlList.length }} 条</p>
+      <p class="web-count">{{ $t('everkb.document.enteredCount', { n: webUrlList.length }) }}</p>
       <template #footer>
-        <ElButton @click="webVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="webSubmitting" @click="handleWebSubmit">提交</ElButton>
+        <ElButton @click="webVisible = false">{{ $t('everkb.document.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="webSubmitting" @click="handleWebSubmit">
+          {{ $t('everkb.document.submit') }}
+        </ElButton>
       </template>
     </ElDialog>
 
     <!-- 原文预览抽屉 -->
-    <ElDrawer v-model="previewVisible" :title="previewDoc?.name || '原文预览'" size="60%">
+    <ElDrawer
+      v-model="previewVisible"
+      :title="previewDoc?.name || $t('everkb.document.previewTitle')"
+      size="60%"
+    >
       <div
         v-if="previewLoading"
         class="preview-loading"
         v-loading="true"
-        :element-loading-text="'加载中'"
+        :element-loading-text="$t('everkb.document.loading')"
       />
       <MdPreview
         v-else-if="previewContent"
         :model-value="previewContent"
         :theme="appStore.isDark ? 'dark' : 'light'"
       />
-      <ElEmpty v-else description="暂无 markdown 内容" />
+      <ElEmpty v-else :description="$t('everkb.document.noMarkdownContent')" />
     </ElDrawer>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ElMessage, ElMessageBox } from 'element-plus'
+  import { I18nT, useI18n } from 'vue-i18n'
   import { Document, Link, Refresh, Upload, UploadFilled } from '@element-plus/icons-vue'
   import { MdPreview } from 'md-editor-v3'
   import 'md-editor-v3/lib/style.css'
@@ -247,6 +290,7 @@
     createWebDocuments,
     deleteDocument,
     fetchDocumentContent,
+    fetchDocumentDetail,
     fetchDocumentPage,
     patchDocumentEnabled,
     replaceDocumentFile,
@@ -261,21 +305,22 @@
 
   defineOptions({ name: 'EverKBDocument' })
 
+  const { t } = useI18n()
+
   type DocRow = Api.EverKB.Document
 
   // ── 状态机元数据（7 态着色）──────────────────────────────────────
-  const STATUS_META: Record<
-    number,
-    { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }
-  > = {
-    [DOC_STATUS.Uploaded]: { label: '已上传', tag: 'info' },
-    [DOC_STATUS.Parsing]: { label: '解析中', tag: 'primary' },
-    [DOC_STATUS.Extracted]: { label: '已抽取', tag: 'primary' },
-    [DOC_STATUS.Chunked]: { label: '已切块', tag: 'primary' },
-    [DOC_STATUS.Vectorizing]: { label: '向量化中', tag: 'warning' },
-    [DOC_STATUS.Completed]: { label: '已完成', tag: 'success' },
-    [DOC_STATUS.Failed]: { label: '失败', tag: 'danger' }
-  }
+  const STATUS_META = computed<
+    Record<number, { label: string; tag: 'info' | 'primary' | 'success' | 'warning' | 'danger' }>
+  >(() => ({
+    [DOC_STATUS.Uploaded]: { label: t('everkb.document.statusUploaded'), tag: 'info' },
+    [DOC_STATUS.Parsing]: { label: t('everkb.document.statusParsing'), tag: 'primary' },
+    [DOC_STATUS.Extracted]: { label: t('everkb.document.statusExtracted'), tag: 'primary' },
+    [DOC_STATUS.Chunked]: { label: t('everkb.document.statusChunked'), tag: 'primary' },
+    [DOC_STATUS.Vectorizing]: { label: t('everkb.document.statusVectorizing'), tag: 'warning' },
+    [DOC_STATUS.Completed]: { label: t('everkb.document.statusCompleted'), tag: 'success' },
+    [DOC_STATUS.Failed]: { label: t('everkb.document.statusFailed'), tag: 'danger' }
+  }))
 
   const isProcessing = (row: DocRow) =>
     row.status >= DOC_STATUS.Parsing && row.status <= DOC_STATUS.Vectorizing
@@ -322,30 +367,36 @@
       immediate: false,
       columnsFactory: (): ColumnOption<DocRow>[] => [
         { prop: 'id', label: 'ID', width: 70 },
-        { prop: 'name', label: '文档', minWidth: 260, useSlot: true },
-        { prop: 'status', label: '状态', width: 110, useSlot: true },
-        { prop: 'source_type', label: '来源', width: 90, useSlot: true },
-        { prop: 'file_type', label: '类型', width: 80 },
+        { prop: 'name', label: t('everkb.document.colDocument'), minWidth: 260, useSlot: true },
+        { prop: 'status', label: t('everkb.document.colStatus'), width: 110, useSlot: true },
+        { prop: 'source_type', label: t('everkb.document.colSource'), width: 90, useSlot: true },
+        { prop: 'file_type', label: t('everkb.document.colType'), width: 80 },
         {
           prop: 'file_size',
-          label: '大小',
+          label: t('everkb.document.colSize'),
           width: 100,
           formatter: (row) => formatSize(row.file_size)
         },
         {
           prop: 'chunk_count',
-          label: '块数',
+          label: t('everkb.document.colChunkCount'),
           width: 80,
           formatter: (row) => (row.chunk_count > 0 ? String(row.chunk_count) : '-')
         },
-        { prop: 'enabled', label: '启用', width: 80, useSlot: true },
+        { prop: 'enabled', label: t('everkb.document.colEnabled'), width: 80, useSlot: true },
         {
           prop: 'updated_at',
-          label: '更新时间',
+          label: t('everkb.document.colUpdatedAt'),
           width: 170,
           formatter: (row) => row.updated_at?.replace('T', ' ').slice(0, 19) || '-'
         },
-        { prop: 'actions', label: '操作', width: 230, fixed: 'right', useSlot: true }
+        {
+          prop: 'actions',
+          label: t('everkb.document.colActions'),
+          width: 230,
+          fixed: 'right',
+          useSlot: true
+        }
       ]
     },
     performance: { enableCache: false }
@@ -375,7 +426,19 @@
   let timer: ReturnType<typeof setInterval> | null = null
 
   onMounted(() => {
-    void loadKbList().then(() => {
+    void loadKbList().then(async () => {
+      // 通知中心跳转：带 docId 时反查 kb_id 并自动选中对应知识库，直达目标文档
+      const docId = route.query.docId
+      if (docId) {
+        try {
+          const detail = await fetchDocumentDetail(Number(docId))
+          if (detail.kb_id != null && kbList.value.some((kb) => kb.id === detail.kb_id)) {
+            currentKbId.value = detail.kb_id
+          }
+        } catch {
+          // 反查失败则保持默认库，不阻断列表加载
+        }
+      }
       if (currentKbId.value) void fetchData()
     })
     timer = setInterval(() => {
@@ -394,7 +457,9 @@
     try {
       const updated = await patchDocumentEnabled(row.id, enabled)
       row.enabled = updated.enabled
-      ElMessage.success(enabled ? '已启用' : '已停用')
+      ElMessage.success(
+        enabled ? t('everkb.document.enableSuccess') : t('everkb.document.disableSuccess')
+      )
     } catch {
       // http 层已弹错误
     }
@@ -414,9 +479,13 @@
   const handleDelete = async (row: DocRow) => {
     try {
       await ElMessageBox.confirm(
-        `确定删除文档「${row.name}」吗？其 chunk 与向量将一并清理。`,
-        '删除确认',
-        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+        t('everkb.document.deleteConfirm', { name: row.name }),
+        t('everkb.document.deleteConfirmTitle'),
+        {
+          type: 'warning',
+          confirmButtonText: t('everkb.document.delete'),
+          cancelButtonText: t('everkb.document.cancel')
+        }
       )
     } catch {
       return
@@ -503,15 +572,15 @@
   const handleWebSubmit = async () => {
     const urls = webUrlList.value
     if (!urls.length) {
-      ElMessage.warning('请至少输入一个 URL')
+      ElMessage.warning(t('everkb.document.urlRequired'))
       return
     }
     if (urls.some((u) => !/^https?:\/\//i.test(u))) {
-      ElMessage.warning('存在非法 URL，须以 http:// 或 https:// 开头')
+      ElMessage.warning(t('everkb.document.urlInvalid'))
       return
     }
     if (urls.length > 50) {
-      ElMessage.warning('单次最多 50 条')
+      ElMessage.warning(t('everkb.document.tooManyUrls'))
       return
     }
     webSubmitting.value = true
@@ -549,6 +618,7 @@
 
   // ── 编辑器跳转 ───────────────────────────────────────────────────
   const router = useRouter()
+  const route = useRoute()
   const openEditor = (row: DocRow) => {
     router.push({
       path: '/everkb/editor',

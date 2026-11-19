@@ -5,8 +5,9 @@
 import pytest
 from pymupdf import open as pdf_open
 
-from app.models import Chunk, Document, DocumentStatus, SourceType
+from app.models import Chunk, Document, DocumentStatus, SourceType, TraceSpan
 from app.services.pipeline import content_key_for, process_document, run_pending
+from app.services.trace import Tracer
 from tests.conftest import make_docx_bytes
 
 
@@ -435,3 +436,44 @@ def test_enabled_flipped_during_processing_takes_effect(pipeline_env, make_docum
     rows = [r for r in env.vector._rows.values() if r.doc_id == doc_id]
     assert rows
     assert all(r.enabled is False for r in rows)
+
+
+# ── 管线观测（二期 Task 29）：tracer 埋点 span 落库 ─────────────────
+
+
+def test_pipeline_tracer_spans_persist(pipeline_env, make_document, seed_source):
+    """传入 tracer 时，入库链路的 span 以负数 trace_id（-(doc_id)）落库。
+
+    回归：pipeline 曾在 tracer.flush 后漏 commit，span 随短会话关闭回滚丢失，
+    导致 Trace 查看器「入库链路」恒为空（对齐 open._persist 的 double-commit）。
+    """
+    doc = make_document()
+    seed_source(doc, make_docx_bytes([
+        ("产品介绍", ["这是第一段正文，介绍平台的核心能力。"]),
+        ("安装步骤", ["使用 Docker Compose 一键启动全部依赖服务。"]),
+    ]))
+    tracer = Tracer()
+
+    process_document(
+        pipeline_env.session, doc.id,
+        storage=pipeline_env.storage,
+        embedder=pipeline_env.embedder,
+        vector=pipeline_env.vector,
+        settings=pipeline_env.settings,
+        tracer=tracer,
+    )
+
+    assert doc.status == DocumentStatus.COMPLETED
+
+    # 换一个干净会话查询 trace_span，确认真实落库（而非残留在本会话缓存）
+    with pipeline_env.factory() as s:
+        spans = (
+            s.query(TraceSpan)
+            .filter(TraceSpan.trace_id == -doc.id)
+            .order_by(TraceSpan.id)
+            .all()
+        )
+        assert len(spans) >= 4  # parser.parse / chunking / embedding / vector.insert 至少 4 个 span
+        assert {sp.span_type for sp in spans} >= {
+            "parse", "chunking", "embedding", "vector_insert"
+        }

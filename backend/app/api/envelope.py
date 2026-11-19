@@ -1,4 +1,4 @@
-"""API 统一信封（docs/2026-11-17-api统一信封-设计文档.md）。
+"""API 统一信封。
 
 EnvelopeRoute：response_model 校验后的 JSONResponse 二次包裹为
 {"code": 0, "message": "ok", "data": ...}，status_code 原样保留；

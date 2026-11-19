@@ -1,7 +1,7 @@
 """检索评测 API（二期 Task 28 可视化，挂载于 /api/v1/admin/evals）。
 
 数据源：`data/legal/ablation_result.json`（scripts/run_ablation.py 落的结构化消融结果，
-与 docs/2026-11-19-检索评测报告.md 同源）。admin「检索评测」页面读它渲染三路对比。
+与同脚本产出的检索评测报告同源）。admin「检索评测」页面读它渲染三路对比。
 
 无数据库依赖——消融结果是离线实验产物，重跑一次评测脚本即更新。
 """

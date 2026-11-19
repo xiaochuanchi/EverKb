@@ -33,7 +33,7 @@
 - 🔀 **BM25 混合检索**：向量语义 + 关键词（jieba 分词 + 手写 BM25）双路检索，RRF 倒数排名融合，法条/专有名词检索更准
 - 🧪 **检索评测与消融实验**：合成评测集 + Recall@k / MRR / Hit@k 指标，一键跑「纯向量 vs 纯 BM25 vs 混合」对比报告
 - 🧹 **对账工具**：扫描「已完成」文档的漂移（chunk 未向量化 / MySQL 与 Milvus 数量不一致）
-- 🔌 **可插拔模型**：LLM 与 Embedding 全走 OpenAI 兼容协议，豆包 / 通义 / DeepSeek / Ollama 均可即插即用
+- 🔌 **可插拔模型**：LLM 与 Embedding 全走 OpenAI 兼容协议，豆包 / 通义 / DeepSeek / Ollama 均可即插即用（改 `.env` 即切换，无需动代码）
 - 🗄️ **可插拔存储**：本地磁盘（默认，开箱即跑）/ 阿里云 OSS
 - 🔐 **应用级 API Key**：每个问答应用独立 key，创建 / 重置时一次性展示明文，其余脱敏
 
@@ -47,7 +47,7 @@ EverKB 不只「有」检索能力，还用一套可复现的评测工程**量�
 | 纯 BM25（jieba 分词） | 71.1% | 0.518 | 71.1% |
 | **RRF 混合** | **87.8%** | **0.675** | **87.8%** |
 
-**结论**：混合检索在召回与排序上均优于任意单路——向量补足语义改写，BM25 补足专有名词/法条精确命中，RRF 倒数排名融合让两者互补而非冲突。完整实验（方法、局限、复现步骤）见 [检索评测报告](docs/2026-11-19-检索评测报告.md)。
+**结论**：混合检索在召回与排序上均优于任意单路——向量补足语义改写，BM25 补足专有名词/法条精确命中，RRF 倒数排名融合让两者互补而非冲突。
 
 > 管理后台「检索评测」页可直接查看三路指标对比图（数据源 `data/legal/ablation_result.json`，由 `run_ablation.py` 自动生成），无需读文档。
 
@@ -104,6 +104,8 @@ python scripts/run_ablation.py         # 三路消融跑分 → 生成评测报�
 - Node.js 18+（前端）
 - 一个 OpenAI 兼容的 LLM / Embedding 服务（豆包 / 通义 / DeepSeek / Ollama 均可）
 
+> 🔧 **想用自己的模型？** 只需改 `.env` 里的 `ARK_*`（LLM）和 `EMBEDDING_*`（Embedding）几行——任何 OpenAI 兼容服务（DeepSeek / 通义 / Ollama / Kimi / GLM…）即插即用，无需改代码。
+
 ### 1. 启动中间件（MySQL + Milvus + Redis）
 
 ```bash
@@ -146,10 +148,9 @@ everkb/
 │   │   ├── services/ #   pipeline 解析管线 / rag 检索 / trace 埋点 / llm 抽象
 │   │   ├── models.py #   SQLAlchemy 2.0 模型
 │   │   └── schemas.py#   Pydantic 契约
-│   └── tests/        #   248 个测试（pytest）
+│   └── tests/        #   292 个测试（pytest）
 ├── admin/            # Vue3 + Element Plus 管理后台
 ├── web/              # Vue3 用户对话端（含 chat-kit 对话核心组件）
-├── docs/             # 设计文档 / 技术决策记录 / 排期
 ├── scripts/          # 启动 / 冒烟 / 环境校验脚本
 └── docker-compose.yml# MySQL + Milvus + Redis 编排
 ```
@@ -157,10 +158,10 @@ everkb/
 ## 测试
 
 ```bash
-# 后端（248 个用例）
+# 后端（292 个用例）
 cd backend && pytest
 
-# 前端（32 个用例，含架构边界测试）
+# 前端（含架构边界测试）
 cd web && pnpm test
 ```
 
@@ -172,7 +173,7 @@ cd web && pnpm test
 - [x] 全链路 Trace 观测（Span 树 + 聚合）
 - [x] 对账工具
 - [x] BM25 混合检索（RRF 融合，jieba 分词 + 手写 BM25）
-- [x] 评测问答集跑分（合成评测集 + 检索消融实验，见 [检索评测报告](docs/2026-11-19-检索评测报告.md)）
+- [x] 评测问答集跑分（合成评测集 + 检索消融实验，指标见上方「检索评测」节）
 - [ ] Agent 编排引擎（多步推理，复用观测模型）
 - [ ] OCR（扫描件 PDF）
 - [ ] OTLP 导出（对接 Jaeger / Langfuse）

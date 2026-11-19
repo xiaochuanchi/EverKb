@@ -116,7 +116,12 @@
           class="notice-button relative"
           @click="visibleNotice"
         >
-          <div class="absolute top-2 right-2 size-1.5 !bg-danger rounded-full"></div>
+          <div
+            v-if="unreadCount > 0"
+            class="absolute top-2 right-2 min-w-3.5 h-3.5 px-0.5 !bg-danger rounded-full text-[9px] leading-3.5 text-white text-center flex-cc"
+          >
+            {{ unreadCount > 99 ? '99+' : unreadCount }}
+          </div>
         </ArtIconButton>
 
         <!-- 聊天按钮 -->
@@ -164,7 +169,7 @@
     <ArtWorkTab />
 
     <!-- 通知 -->
-    <ArtNotification v-model:value="showNotice" ref="notice" />
+    <ArtNotification v-model:value="showNotice" ref="notice" @unread-change="onUnreadChange" />
   </div>
 </template>
 
@@ -182,6 +187,7 @@
   import { themeAnimation } from '@/utils/ui/animation'
   import { useCommon } from '@/hooks/core/useCommon'
   import { useHeaderBar } from '@/hooks/core/useHeaderBar'
+  import { fetchUnreadCount } from '@/api/everkb/notification'
   import ArtUserMenu from './widget/ArtUserMenu.vue'
 
   defineOptions({ name: 'ArtHeaderBar' })
@@ -221,6 +227,7 @@
 
   const showNotice = ref(false)
   const notice = ref(null)
+  const unreadCount = ref(0)
 
   // 菜单类型判断
   const isLeftMenu = computed(() => menuType.value === MenuTypeEnum.LEFT)
@@ -233,11 +240,31 @@
   onMounted(() => {
     initLanguage()
     document.addEventListener('click', bodyCloseNotice)
+    void loadUnreadCount()
   })
 
   onUnmounted(() => {
     document.removeEventListener('click', bodyCloseNotice)
   })
+
+  /**
+   * 拉取未读通知数（驱动铃铛红点）
+   */
+  const loadUnreadCount = async (): Promise<void> => {
+    try {
+      const { unread } = await fetchUnreadCount()
+      unreadCount.value = unread
+    } catch {
+      // 未读数拉取失败不阻塞页面
+    }
+  }
+
+  /**
+   * 通知抽屉回传未读数
+   */
+  const onUnreadChange = (unread: number): void => {
+    unreadCount.value = unread
+  }
 
   /**
    * 切换全屏状态

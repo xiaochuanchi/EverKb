@@ -13,3 +13,16 @@ data/*
 .run/
 .workbuddy-ai/
 .workbuddy/
+.claude/
+.superpowers/
+
+# 品牌设计源文件（如需开源品牌素材，请显式放开对应条目）
+*.miora
+EverKB-Logo_assets/
+brand-assets/
+
+# 内部文档（规划 / 排期 / 决策过程与 AI 协作规则）：仅本地保留，不入公开仓库
+# 永久备份在 ../everkb-private/（可推送到私有仓库）
+docs/
+AGENTS.md
+CLAUDE.md

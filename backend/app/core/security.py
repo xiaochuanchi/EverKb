@@ -1,7 +1,7 @@
 """鉴权安全原语（Task 14 / 计划文档 I8）：密码哈希 + JWT 签发与解码。
 
 纯函数模块，不触库、不依赖 FastAPI——依赖缝判定：哈希与验签是纯库调用，
-直接 import 不注入（docs/ai/architecture-and-abstraction.md）。
+直接 import 不注入。
 
 - 密码哈希：hashlib.pbkdf2_hmac（标准库零依赖，红线只禁框架不禁算法），
   格式串 `pbkdf2_sha256$轮数$盐hex$哈希hex` 存库（models.AdminUser.password_hash），

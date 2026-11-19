@@ -4,7 +4,7 @@
       <template #left>
         <ElButton type="primary" @click="openCreate">
           <el-icon class="mr-1"><Plus /></el-icon>
-          新建知识库
+          {{ $t('everkb.knowledge.create') }}
         </ElButton>
       </template>
     </ArtTableHeader>
@@ -14,50 +14,60 @@
       :data="data"
       :loading="loading"
       empty-height="420"
-      emptyText="还没有知识库，点击「新建知识库」创建第一个"
+      :emptyText="$t('everkb.knowledge.emptyText')"
     >
       <template #status="{ row }">
         <ElSwitch
           :model-value="row.status === KB_STATUS.Enabled"
           :loading="row._statusLoading"
           :inline-prompt="true"
-          active-text="启用"
-          inactive-text="停用"
+          :active-text="$t('everkb.knowledge.enable')"
+          :inactive-text="$t('everkb.knowledge.disable')"
           @change="(v) => handleToggleStatus(row, Boolean(v))"
         />
       </template>
       <template #actions="{ row }">
-        <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
-        <ElButton link type="danger" @click="handleDelete(row)">删除</ElButton>
+        <ElButton link type="primary" @click="openEdit(row)">{{
+          $t('everkb.knowledge.edit')
+        }}</ElButton>
+        <ElButton link type="danger" @click="handleDelete(row)">{{
+          $t('everkb.knowledge.delete')
+        }}</ElButton>
       </template>
     </ArtTable>
 
     <!-- 新建 / 编辑弹窗 -->
     <ElDialog
       v-model="dialogVisible"
-      :title="editingRow ? '编辑知识库' : '新建知识库'"
+      :title="editingRow ? $t('everkb.knowledge.editTitle') : $t('everkb.knowledge.create')"
       width="480px"
       :close-on-click-modal="false"
       @closed="resetForm"
     >
       <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-        <ElFormItem label="名称" prop="name">
-          <ElInput v-model="form.name" maxlength="128" placeholder="知识库名称（唯一）" />
+        <ElFormItem :label="$t('everkb.knowledge.nameLabel')" prop="name">
+          <ElInput
+            v-model="form.name"
+            maxlength="128"
+            :placeholder="$t('everkb.knowledge.namePlaceholder')"
+          />
         </ElFormItem>
-        <ElFormItem label="描述" prop="description">
+        <ElFormItem :label="$t('everkb.knowledge.descLabel')" prop="description">
           <ElInput
             v-model="form.description"
             type="textarea"
             :rows="3"
             maxlength="512"
             show-word-limit
-            placeholder="简要说明该知识库的用途（可选）"
+            :placeholder="$t('everkb.knowledge.descPlaceholder')"
           />
         </ElFormItem>
       </ElForm>
       <template #footer>
-        <ElButton @click="dialogVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="submitting" @click="handleSubmit">确定</ElButton>
+        <ElButton @click="dialogVisible = false">{{ $t('everkb.knowledge.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="submitting" @click="handleSubmit">{{
+          $t('everkb.knowledge.confirm')
+        }}</ElButton>
       </template>
     </ElDialog>
   </div>
@@ -65,6 +75,7 @@
 
 <script setup lang="ts">
   import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+  import { useI18n } from 'vue-i18n'
   import { Plus } from '@element-plus/icons-vue'
   import { createKb, deleteKb, fetchKbList, updateKb } from '@/api/kb'
   import { KB_STATUS } from '@/constants/everkb'
@@ -72,6 +83,8 @@
   import { useTable } from '@/hooks/core/useTable'
 
   defineOptions({ name: 'EverKBKnowledge' })
+
+  const { t } = useI18n()
 
   type KBRow = Api.EverKB.KB & { _statusLoading?: boolean }
 
@@ -94,22 +107,28 @@
       immediate: true,
       columnsFactory: (): ColumnOption<KBRow>[] => [
         { prop: 'id', label: 'ID', width: 70 },
-        { prop: 'name', label: '名称', minWidth: 180 },
+        { prop: 'name', label: t('everkb.knowledge.nameLabel'), minWidth: 180 },
         {
           prop: 'description',
-          label: '描述',
+          label: t('everkb.knowledge.descLabel'),
           minWidth: 220,
           showOverflowTooltip: true,
           formatter: (row) => row.description || '-'
         },
-        { prop: 'status', label: '状态', width: 110, useSlot: true },
+        { prop: 'status', label: t('everkb.knowledge.status'), width: 110, useSlot: true },
         {
           prop: 'created_at',
-          label: '创建时间',
+          label: t('everkb.knowledge.createdAt'),
           width: 170,
           formatter: (row) => row.created_at?.replace('T', ' ').slice(0, 19) || '-'
         },
-        { prop: 'actions', label: '操作', width: 140, fixed: 'right', useSlot: true }
+        {
+          prop: 'actions',
+          label: t('everkb.knowledge.actions'),
+          width: 140,
+          fixed: 'right',
+          useSlot: true
+        }
       ]
     },
     performance: { enableCache: false }
@@ -123,7 +142,7 @@
         status: enabled ? KB_STATUS.Enabled : KB_STATUS.Disabled
       })
       row.status = enabled ? KB_STATUS.Enabled : KB_STATUS.Disabled
-      ElMessage.success(enabled ? '已启用' : '已停用')
+      ElMessage.success(enabled ? t('everkb.knowledge.enabled') : t('everkb.knowledge.disabled'))
     } catch {
       // 失败静默（http 层已弹错误消息），开关状态由 model-value 回退
     } finally {
@@ -140,8 +159,8 @@
 
   const rules: FormRules = {
     name: [
-      { required: true, message: '请输入知识库名称', trigger: 'blur' },
-      { min: 1, max: 128, message: '长度 1 ~ 128 位', trigger: 'blur' }
+      { required: true, message: t('everkb.knowledge.nameRequired'), trigger: 'blur' },
+      { min: 1, max: 128, message: t('everkb.knowledge.lengthRange'), trigger: 'blur' }
     ]
   }
 
@@ -193,11 +212,15 @@
   // ── 删除 ─────────────────────────────────────────────────────────
   const handleDelete = async (row: KBRow) => {
     try {
-      await ElMessageBox.confirm(`确定删除知识库「${row.name}」吗？仅空库可删除。`, '删除确认', {
-        type: 'warning',
-        confirmButtonText: '删除',
-        cancelButtonText: '取消'
-      })
+      await ElMessageBox.confirm(
+        t('everkb.knowledge.deleteConfirm', { name: row.name }),
+        t('everkb.knowledge.deleteConfirmTitle'),
+        {
+          type: 'warning',
+          confirmButtonText: t('everkb.knowledge.delete'),
+          cancelButtonText: t('everkb.knowledge.cancel')
+        }
+      )
     } catch {
       return
     }

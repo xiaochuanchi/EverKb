@@ -143,6 +143,8 @@ def _write_report(result: dict, n_items: int, top_k: int, n_chunks: int) -> None
 - **评测集规模有限**：{n_chunks} chunk 抽样 {n_items} 条，消融实验的分辨率受限于法规包体量。
 - **RRF 参数**：k=60（经典默认值），oversample=4，未做参数扫描。
 """
+    # docs/ 已不入库（.gitignore），新克隆环境可能不存在，写报告前先确保目录
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(content, encoding="utf-8")
 
 

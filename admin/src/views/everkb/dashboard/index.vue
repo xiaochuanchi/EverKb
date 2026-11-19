@@ -36,12 +36,12 @@
     <!-- 中区：趋势图 + 分布图 -->
     <div class="chart-row">
       <div class="chart-panel art-card-sm">
-        <div class="panel-title">问答活跃趋势（近 14 天）</div>
+        <div class="panel-title">{{ $t('everkb.dashboard.trendTitle') }}</div>
         <div ref="trendChartRef" class="chart-canvas" v-loading="loading" />
       </div>
 
       <div class="chart-panel art-card-sm">
-        <div class="panel-title">检索模式分布</div>
+        <div class="panel-title">{{ $t('everkb.dashboard.retrievalTitle') }}</div>
         <ArtRingChart
           :data="retrievalModeData"
           :show-legend="true"
@@ -51,7 +51,7 @@
           height="16rem"
         />
         <div v-if="!loading && retrievalModeData.length === 0" class="empty-hint">
-          暂无应用
+          {{ $t('everkb.dashboard.noApps') }}
         </div>
       </div>
     </div>
@@ -60,16 +60,16 @@
     <div class="bottom-row">
       <!-- 文档状态分布 -->
       <div class="chart-panel art-card-sm">
-        <div class="panel-title">文档状态分布</div>
+        <div class="panel-title">{{ $t('everkb.dashboard.docStatusTitle') }}</div>
         <div ref="docStatusChartRef" class="chart-canvas" v-loading="loading" />
       </div>
 
       <!-- 最近问答 -->
       <div class="chart-panel art-card-sm">
         <div class="panel-title">
-          最近问答
+          {{ $t('everkb.dashboard.recentQaTitle') }}
           <ElButton link type="primary" class="panel-more" @click="goTo('/everkb/qa-record')">
-            查看全部
+            {{ $t('everkb.dashboard.viewAll') }}
           </ElButton>
         </div>
         <ElTable :data="dashboard?.recent_qa ?? []" size="small" :show-header="false">
@@ -81,7 +81,9 @@
           <ElTableColumn width="70" align="right">
             <template #default="{ row }">
               <ElTag size="small" :type="row.grounded ? 'success' : 'info'" effect="plain">
-                {{ row.grounded ? '基于知识库' : '自由回答' }}
+                {{
+                  row.grounded ? $t('everkb.dashboard.grounded') : $t('everkb.dashboard.freeAnswer')
+                }}
               </ElTag>
             </template>
           </ElTableColumn>
@@ -94,14 +96,16 @@
             </template>
           </ElTableColumn>
         </ElTable>
-        <div v-if="!loading && !dashboard?.recent_qa?.length" class="empty-hint">暂无问答</div>
+        <div v-if="!loading && !dashboard?.recent_qa?.length" class="empty-hint">
+          {{ $t('everkb.dashboard.noQa') }}
+        </div>
       </div>
     </div>
 
     <!-- 底部：异常告警 + 评测结论摘要 -->
     <div class="alert-row">
       <div v-if="alertItems.length" class="alert-panel art-card-sm">
-        <div class="panel-title">待处理异常</div>
+        <div class="panel-title">{{ $t('everkb.dashboard.pendingAlerts') }}</div>
         <div v-for="item in alertItems" :key="item.label" class="alert-item">
           <span class="alert-label">{{ item.label }}</span>
           <ElButton link type="danger" @click="goTo(item.path)">{{ item.count }} →</ElButton>
@@ -109,15 +113,22 @@
       </div>
 
       <div class="alert-panel art-card-sm">
-        <div class="panel-title">检索评测结论</div>
+        <div class="panel-title">{{ $t('everkb.dashboard.evalTitle') }}</div>
         <div v-if="ablation" class="eval-summary">
           <span class="eval-line">
-            RRF 混合 <b>{{ toPercent(hybridRecall) }}</b> vs 纯向量
-            {{ toPercent(denseRecall) }}（Recall@{{ ablation.top_k }}）
+            {{ $t('everkb.dashboard.rrfHybrid') }} <b>{{ toPercent(hybridRecall) }}</b> vs
+            {{
+              $t('everkb.dashboard.denseRecall', {
+                dense: toPercent(denseRecall),
+                n: ablation.top_k
+              })
+            }}
           </span>
-          <ElButton link type="primary" @click="goTo('/everkb/eval')">查看评测 →</ElButton>
+          <ElButton link type="primary" @click="goTo('/everkb/eval')">
+            {{ $t('everkb.dashboard.viewEval') }}
+          </ElButton>
         </div>
-        <div v-else class="empty-hint">暂无评测数据</div>
+        <div v-else class="empty-hint">{{ $t('everkb.dashboard.noEval') }}</div>
       </div>
     </div>
   </div>
@@ -125,6 +136,7 @@
 
 <script setup lang="ts">
   import { useRouter } from 'vue-router'
+  import { useI18n } from 'vue-i18n'
   import { ArrowRight } from '@element-plus/icons-vue'
   import ArtRingChart from '@/components/core/charts/art-ring-chart/index.vue'
   import { fetchDashboard } from '@/api/everkb/dashboard'
@@ -136,6 +148,7 @@
   defineOptions({ name: 'EverKBDashboard' })
 
   const router = useRouter()
+  const { t } = useI18n()
   const loading = ref(true)
   const dashboard = ref<Api.EverKB.Dashboard | null>(null)
   const ablation = ref<Api.EverKB.AblationResult | null>(null)
@@ -159,7 +172,7 @@
     const kpi = d?.kpi_trend ?? {}
     return [
       {
-        label: '知识库',
+        label: t('everkb.dashboard.totalKb'),
         value: d?.kb_count ?? 0,
         icon: 'ri:database-2-line',
         iconStyle: 'bg-primary',
@@ -167,24 +180,26 @@
         trend: kpi.kb
       },
       {
-        label: '文档',
+        label: t('everkb.dashboard.docs'),
         value: d?.doc_count ?? 0,
         icon: 'ri:file-text-line',
         iconStyle: 'bg-info',
         path: '/everkb/document',
         trend: kpi.doc,
-        alert: d?.failed_doc_count ? `${d.failed_doc_count} 失败` : undefined
+        alert: d?.failed_doc_count
+          ? t('everkb.dashboard.failedDocsAlert', { n: d.failed_doc_count })
+          : undefined
       },
       {
         label: 'Chunk',
         value: d?.chunk_count ?? 0,
         icon: 'ri:stack-line',
         iconStyle: 'bg-success',
-        path: '/everkb/chunk',
+        path: '/everkb/document',
         trend: kpi.chunk
       },
       {
-        label: '应用',
+        label: t('everkb.dashboard.apps'),
         value: d?.app_count ?? 0,
         icon: 'ri:robot-2-line',
         iconStyle: 'bg-secondary',
@@ -192,7 +207,7 @@
         trend: kpi.app
       },
       {
-        label: '问答',
+        label: t('everkb.dashboard.qa'),
         value: d?.qa_count ?? 0,
         icon: 'ri:chat-3-line',
         iconStyle: 'bg-warning',
@@ -200,7 +215,7 @@
         trend: kpi.qa
       },
       {
-        label: '花费',
+        label: t('everkb.dashboard.cost'),
         value: d?.total_cost ?? 0,
         icon: 'ri:money-cny-circle-line',
         iconStyle: 'bg-danger',
@@ -209,12 +224,14 @@
         trend: kpi.cost
       },
       {
-        label: '漂移',
+        label: t('everkb.dashboard.drift'),
         value: d?.drift_doc_count ?? 0,
         icon: 'ri:git-repository-commits-line',
         iconStyle: 'bg-danger',
         path: '/everkb/reconcile',
-        alert: d?.drift_doc_count ? `${d.drift_doc_count} 文档漂移` : undefined
+        alert: d?.drift_doc_count
+          ? t('everkb.dashboard.driftDocsAlert', { n: d.drift_doc_count })
+          : undefined
       }
     ]
   })
@@ -244,7 +261,7 @@
         },
         series: [
           {
-            name: '问答数',
+            name: t('everkb.dashboard.qaCountSeries'),
             type: 'line',
             data: counts,
             smooth: true,
@@ -261,20 +278,26 @@
   const ringColors = ['#409EFF', '#14DEBA']
   const retrievalModeData = computed(() =>
     (dashboard.value?.retrieval_modes ?? []).map((m) => ({
-      name: m.mode === 'hybrid' ? '混合检索' : '纯向量',
+      name:
+        m.mode === 'hybrid' ? t('everkb.dashboard.hybridMode') : t('everkb.dashboard.denseMode'),
       value: m.count
     }))
   )
 
   // ── 文档状态分布图 ───────────────────────────────────────────
-  const DOC_STATUS_LABEL: Record<number, string> = {
-    [DOC_STATUS.Uploaded]: '已上传',
-    [DOC_STATUS.Parsing]: '解析中',
-    [DOC_STATUS.Extracted]: '已抽取',
-    [DOC_STATUS.Chunked]: '已切块',
-    [DOC_STATUS.Vectorizing]: '向量化中',
-    [DOC_STATUS.Completed]: '已完成',
-    [DOC_STATUS.Failed]: '失败'
+  const DOC_STATUS_LABEL_KEY: Record<number, string> = {
+    [DOC_STATUS.Uploaded]: 'everkb.dashboard.docStatusUploaded',
+    [DOC_STATUS.Parsing]: 'everkb.dashboard.docStatusParsing',
+    [DOC_STATUS.Extracted]: 'everkb.dashboard.docStatusExtracted',
+    [DOC_STATUS.Chunked]: 'everkb.dashboard.docStatusChunked',
+    [DOC_STATUS.Vectorizing]: 'everkb.dashboard.docStatusVectorizing',
+    [DOC_STATUS.Completed]: 'everkb.dashboard.docStatusCompleted',
+    [DOC_STATUS.Failed]: 'everkb.dashboard.docStatusFailed'
+  }
+
+  const docStatusLabel = (status: number) => {
+    const key = DOC_STATUS_LABEL_KEY[status]
+    return key ? t(key) : t('everkb.dashboard.docStatusUnknown', { n: status })
   }
 
   const docStatusData = computed(() => dashboard.value?.doc_status ?? [])
@@ -284,7 +307,7 @@
     checkEmpty: () => !docStatusData.value.length,
     watchSources: [() => dashboard.value],
     generateOptions: (): EChartsOption => {
-      const labels = docStatusData.value.map((d) => DOC_STATUS_LABEL[d.status] ?? `状态${d.status}`)
+      const labels = docStatusData.value.map((d) => docStatusLabel(d.status))
       const counts = docStatusData.value.map((d) => d.count)
       return {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -293,7 +316,7 @@
         yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#999' } },
         series: [
           {
-            name: '文档数',
+            name: t('everkb.dashboard.docCountSeries'),
             type: 'bar',
             data: counts,
             barWidth: '45%',
@@ -309,10 +332,18 @@
     const d = dashboard.value
     const items: { label: string; count: number; path: string }[] = []
     if (d?.failed_doc_count) {
-      items.push({ label: '失败文档', count: d.failed_doc_count, path: '/everkb/document' })
+      items.push({
+        label: t('everkb.dashboard.alertFailedDocs'),
+        count: d.failed_doc_count,
+        path: '/everkb/document'
+      })
     }
     if (d?.drift_doc_count) {
-      items.push({ label: '向量漂移', count: d.drift_doc_count, path: '/everkb/reconcile' })
+      items.push({
+        label: t('everkb.dashboard.alertDriftDocs'),
+        count: d.drift_doc_count,
+        path: '/everkb/reconcile'
+      })
     }
     return items
   })

@@ -3,11 +3,11 @@
     <!-- 工具条：应用筛选 + 反馈筛选 + 刷新 -->
     <div class="toolbar art-card-sm">
       <div class="toolbar-left">
-        <span class="toolbar-label">应用</span>
+        <span class="toolbar-label">{{ $t('everkb.qaRecord.app') }}</span>
         <ElSelect
           v-model="appFilter"
           :loading="appLoading"
-          placeholder="全部应用"
+          :placeholder="$t('everkb.qaRecord.allApps')"
           clearable
           filterable
           style="width: 200px"
@@ -16,10 +16,10 @@
           <ElOption v-for="app in appList" :key="app.id" :label="app.name" :value="app.id" />
         </ElSelect>
 
-        <span class="toolbar-label">反馈</span>
+        <span class="toolbar-label">{{ $t('everkb.qaRecord.feedback') }}</span>
         <ElSelect
           v-model="feedbackFilter"
-          placeholder="全部"
+          :placeholder="$t('everkb.qaRecord.all')"
           clearable
           style="width: 140px"
           @change="handleFilterChange"
@@ -44,7 +44,7 @@
       :pagination="pagination"
       :paginationOptions="{ pageSizes: [20, 50, 100], hideOnSinglePage: false }"
       empty-height="420"
-      emptyText="暂无问答记录"
+      :empty-text="$t('everkb.qaRecord.emptyText')"
       @pagination:size-change="handleSizeChange"
       @pagination:current-change="handleCurrentChange"
     >
@@ -59,7 +59,7 @@
       </template>
       <template #grounded="{ row }">
         <ElTag size="small" :type="row.grounded ? 'success' : 'warning'" effect="plain">
-          {{ row.grounded ? '已基于知识库' : '自由回答' }}
+          {{ row.grounded ? $t('everkb.qaRecord.groundedYes') : $t('everkb.qaRecord.groundedNo') }}
         </ElTag>
       </template>
       <template #citations="{ row }">
@@ -67,36 +67,43 @@
       </template>
       <template #feedback="{ row }">
         <ElTag size="small" :type="FEEDBACK_META[row.feedback]?.tag || 'info'" effect="plain">
-          {{ FEEDBACK_META[row.feedback]?.label ?? `未知(${row.feedback})` }}
+          {{
+            FEEDBACK_META[row.feedback]?.label ??
+            $t('everkb.qaRecord.unknownFeedback', { n: row.feedback })
+          }}
         </ElTag>
       </template>
       <template #actions="{ row }">
-        <ElButton link type="primary" @click="openDetail(row)">详情</ElButton>
+        <ElButton link type="primary" @click="openDetail(row)">
+          {{ $t('everkb.qaRecord.detail') }}
+        </ElButton>
       </template>
     </ArtTable>
 
     <!-- 详情抽屉 -->
-    <ElDrawer v-model="detailVisible" title="问答记录详情" size="56%">
+    <ElDrawer v-model="detailVisible" :title="$t('everkb.qaRecord.detailTitle')" size="56%">
       <div
         v-if="detailLoading"
         v-loading="true"
-        element-loading-text="加载中"
+        :element-loading-text="$t('everkb.qaRecord.loading')"
         class="detail-loading"
       />
       <template v-else-if="detail">
         <div class="detail-section">
-          <div class="detail-section-title">问题</div>
+          <div class="detail-section-title">{{ $t('everkb.qaRecord.question') }}</div>
           <div class="detail-block">{{ detail.question }}</div>
         </div>
         <div class="detail-section">
-          <div class="detail-section-title">回答</div>
+          <div class="detail-section-title">{{ $t('everkb.qaRecord.answer') }}</div>
           <div class="detail-block answer-block">{{ detail.answer }}</div>
         </div>
         <div class="detail-section">
-          <div class="detail-section-title">引用（{{ detail.citations?.length ?? 0 }}）</div>
+          <div class="detail-section-title">
+            {{ $t('everkb.qaRecord.citations', { n: detail.citations?.length ?? 0 }) }}
+          </div>
           <ElEmpty
             v-if="!detail.citations?.length"
-            description="无引用（自由回答）"
+            :description="$t('everkb.qaRecord.noCitations')"
             :image-size="60"
           />
           <div v-else class="citation-list">
@@ -105,7 +112,7 @@
                 <span class="citation-index">[{{ i + 1 }}]</span>
                 <span class="citation-name">{{ c.doc_name }}</span>
                 <ElTag v-if="c.page_number != null" size="small" type="info" effect="plain">
-                  第 {{ c.page_number }} 页
+                  {{ $t('everkb.qaRecord.pageN', { n: c.page_number }) }}
                 </ElTag>
                 <ElTag size="small" type="primary" effect="plain"
                   >score {{ c.score?.toFixed(3) }}</ElTag
@@ -116,27 +123,34 @@
           </div>
         </div>
         <div class="detail-section">
-          <div class="detail-section-title">元信息</div>
+          <div class="detail-section-title">{{ $t('everkb.qaRecord.metaInfo') }}</div>
           <ElDescriptions :column="2" border size="small">
-            <ElDescriptionsItem label="记录 ID">{{ detail.id }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="应用">
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.recordId')">
+              {{ detail.id }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.app')">
               {{ appNameMap[detail.app_id] ?? `#${detail.app_id}` }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="反馈">
-              {{ FEEDBACK_META[detail.feedback]?.label ?? `未知(${detail.feedback})` }}
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.feedback')">
+              {{
+                FEEDBACK_META[detail.feedback]?.label ??
+                $t('everkb.qaRecord.unknownFeedback', { n: detail.feedback })
+              }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="grounded">{{
-              detail.grounded ? '是' : '否'
+              detail.grounded ? $t('everkb.qaRecord.yes') : $t('everkb.qaRecord.no')
             }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="耗时">{{ detail.latency_ms }} ms</ElDescriptionsItem>
-            <ElDescriptionsItem label="总花费">
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.latency')">
+              {{ detail.latency_ms }} ms
+            </ElDescriptionsItem>
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.totalCost')">
               {{ detail.total_cost == null ? '-' : `¥${detail.total_cost.toFixed(6)}` }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="user_key">{{ detail.user_key || '-' }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="创建时间">
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.createdAt')">
               {{ detail.created_at?.replace('T', ' ').slice(0, 19) }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="模型快照" :span="2">
+            <ElDescriptionsItem :label="$t('everkb.qaRecord.modelSnapshot')" :span="2">
               <code class="mono">{{ JSON.stringify(detail.model_snapshot ?? {}) }}</code>
             </ElDescriptionsItem>
           </ElDescriptions>
@@ -149,6 +163,7 @@
 <script setup lang="ts">
   import { ElMessage } from 'element-plus'
   import { Refresh } from '@element-plus/icons-vue'
+  import { useI18n } from 'vue-i18n'
   import { fetchQaRecordDetail, fetchQaRecordPage } from '@/api/everkb/qa-record'
   import { fetchAppList } from '@/api/everkb/app'
   import { FEEDBACK } from '@/constants/everkb'
@@ -159,13 +174,15 @@
 
   type QaRow = Api.EverKB.QaRecord
 
+  const { t } = useI18n()
+
   const FEEDBACK_META: Record<
     number,
     { label: string; tag: 'info' | 'success' | 'danger' | 'warning' }
   > = {
-    [FEEDBACK.None]: { label: '未反馈', tag: 'info' },
-    [FEEDBACK.Good]: { label: '满意', tag: 'success' },
-    [FEEDBACK.Bad]: { label: '不满意', tag: 'danger' }
+    [FEEDBACK.None]: { label: t('everkb.qaRecord.feedbackNone'), tag: 'info' },
+    [FEEDBACK.Good]: { label: t('everkb.qaRecord.feedbackGood'), tag: 'success' },
+    [FEEDBACK.Bad]: { label: t('everkb.qaRecord.feedbackBad'), tag: 'danger' }
   }
 
   // ── 应用下拉（筛选）─────────────────────────────────────────────
@@ -209,19 +226,25 @@
       immediate: true,
       columnsFactory: (): ColumnOption<QaRow>[] => [
         { prop: 'id', label: 'ID', width: 80 },
-        { prop: 'app_id', label: '应用', width: 150, useSlot: true },
-        { prop: 'question', label: '问题', minWidth: 200, useSlot: true },
-        { prop: 'answer', label: '回答', minWidth: 220, useSlot: true },
-        { prop: 'grounded', label: '依据', width: 130, useSlot: true },
-        { prop: 'citations', label: '引用数', width: 80, useSlot: true },
-        { prop: 'feedback', label: '反馈', width: 100, useSlot: true },
+        { prop: 'app_id', label: t('everkb.qaRecord.app'), width: 150, useSlot: true },
+        { prop: 'question', label: t('everkb.qaRecord.question'), minWidth: 200, useSlot: true },
+        { prop: 'answer', label: t('everkb.qaRecord.answer'), minWidth: 220, useSlot: true },
+        { prop: 'grounded', label: t('everkb.qaRecord.colGrounded'), width: 130, useSlot: true },
+        { prop: 'citations', label: t('everkb.qaRecord.colCitations'), width: 80, useSlot: true },
+        { prop: 'feedback', label: t('everkb.qaRecord.feedback'), width: 100, useSlot: true },
         {
           prop: 'created_at',
-          label: '时间',
+          label: t('everkb.qaRecord.colTime'),
           width: 170,
           formatter: (row) => row.created_at?.replace('T', ' ').slice(0, 19) || '-'
         },
-        { prop: 'actions', label: '操作', width: 80, fixed: 'right', useSlot: true }
+        {
+          prop: 'actions',
+          label: t('everkb.qaRecord.colActions'),
+          width: 80,
+          fixed: 'right',
+          useSlot: true
+        }
       ]
     },
     performance: { enableCache: false }
@@ -250,7 +273,7 @@
       detail.value = await fetchQaRecordDetail(row.id)
     } catch {
       detailVisible.value = false
-      ElMessage.error('加载详情失败')
+      ElMessage.error(t('everkb.qaRecord.loadDetailFailed'))
     } finally {
       detailLoading.value = false
     }

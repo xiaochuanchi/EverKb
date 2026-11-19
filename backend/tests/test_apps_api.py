@@ -145,3 +145,22 @@ def test_patch_app_retrieval_mode(client):
     r = client.patch(f"{BASE}/{app_id}", json={"retrieval_mode": "hybrid"})
     assert r.status_code == 200
     assert r.json()["data"]["retrieval_mode"] == "hybrid"
+
+
+def test_create_app_accepts_valid_prompt_template(client):
+    """合法模板（含 {question} 与 {context}）：创建成功。"""
+    tmpl = "参考资料：\n{context}\n\n问题：{question}"
+    body = _create(client, "合法模板", prompt_template=tmpl).json()["data"]
+    assert body["prompt_template"] == tmpl
+
+
+def test_create_app_rejects_prompt_template_without_question(client):
+    """缺 {question} 占位符的模板：422 拒绝，防止问题无法注入。"""
+    assert _create(client, "坏模板", prompt_template="回答用户的问题").status_code == 422
+
+
+def test_patch_app_rejects_prompt_template_without_question(client):
+    """PATCH 写坏模板（缺 {question}）：422 拒绝。"""
+    app_id = _create(client, "改坏模板").json()["data"]["id"]
+    r = client.patch(f"{BASE}/{app_id}", json={"prompt_template": "回答用户的问题"})
+    assert r.status_code == 422

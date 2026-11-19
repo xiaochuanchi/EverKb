@@ -3,15 +3,17 @@
     <!-- 元信息卡 -->
     <div v-if="!loading && result" class="meta-bar art-card-sm">
       <div class="meta-item">
-        <span class="meta-label">评测库</span>
+        <span class="meta-label">{{ $t('everkb.eval.evalKb') }}</span>
         <span class="meta-value">{{ result.eval_kb }}</span>
       </div>
       <div class="meta-item">
-        <span class="meta-label">评测集</span>
-        <span class="meta-value">{{ result.n_items }} 条（seed={{ result.seed }}）</span>
+        <span class="meta-label">{{ $t('everkb.eval.evalSet') }}</span>
+        <span class="meta-value">
+          {{ $t('everkb.eval.itemsWithSeed', { n: result.n_items, seed: result.seed }) }}
+        </span>
       </div>
       <div class="meta-item">
-        <span class="meta-label">Chunk 规模</span>
+        <span class="meta-label">{{ $t('everkb.eval.chunkScale') }}</span>
         <span class="meta-value">{{ result.n_chunks }}</span>
       </div>
       <div class="meta-item">
@@ -19,27 +21,27 @@
         <span class="meta-value">{{ result.top_k }}</span>
       </div>
       <div class="meta-item">
-        <span class="meta-label">RRF 参数</span>
+        <span class="meta-label">{{ $t('everkb.eval.rrfParams') }}</span>
         <span class="meta-value">k={{ result.rrf_k }} · oversample={{ result.oversample }}</span>
       </div>
       <div class="meta-item">
-        <span class="meta-label">生成时间</span>
+        <span class="meta-label">{{ $t('everkb.eval.generatedAt') }}</span>
         <span class="meta-value">{{ formatTime(result.generated_at) }}</span>
       </div>
     </div>
 
     <!-- 三路指标对比柱状图 -->
     <div class="chart-card art-card-sm">
-      <div class="section-title">三路检索指标对比（Recall@k / MRR / Hit@k）</div>
+      <div class="section-title">{{ $t('everkb.eval.chartTitle') }}</div>
       <div v-if="!loading && result" ref="chartRef" class="chart-canvas" />
       <div v-else class="chart-empty" v-loading="loading" />
     </div>
 
     <!-- 明细表 -->
     <div class="table-card art-card-sm">
-      <div class="section-title">指标明细</div>
+      <div class="section-title">{{ $t('everkb.eval.metricDetails') }}</div>
       <ElTable :data="result?.results ?? []" size="small" border>
-        <ElTableColumn prop="label" label="检索方式" min-width="140" />
+        <ElTableColumn prop="label" :label="$t('everkb.eval.retrievalMethod')" min-width="140" />
         <ElTableColumn label="Recall@k" width="140" align="right">
           <template #default="{ row }">
             <span class="metric-cell" :class="{ best: row.key === bestKey }">
@@ -66,15 +68,25 @@
 
     <!-- 结论与方法局限 -->
     <div class="conclusion art-card-sm">
-      <div class="section-title">结论</div>
-      <p class="conclusion-text">
-        RRF 混合检索在 Recall@k 上不劣于单路（且通常更稳），印证「关键词精确 + 语义召回互补」的价值——法条检索中近义表述、专有名词、交叉引用场景下，纯向量易漏关键词命中，纯 BM25 易漏语义改写，混合互补。
-      </p>
-      <div class="section-title" style="margin-top: 16px">方法局限（如实说明）</div>
+      <div class="section-title">{{ $t('everkb.eval.conclusion') }}</div>
+      <p class="conclusion-text">{{ $t('everkb.eval.conclusionText') }}</p>
+      <div class="section-title" style="margin-top: 16px">
+        {{ $t('everkb.eval.limitationsTitle') }}
+      </div>
       <ul class="limits">
-        <li>合成法 ground truth 偏乐观：<code>relevant_chunk_ids</code> 假设「query 应命中来源 chunk 自身」，但 LLM 白话改写后的 query 可能命中语义等价的其他 chunk，导致三路指标普遍偏高、区分度被压缩。已预留人工抽检 10% 入口修正。</li>
-        <li>评测集规模有限：{{ result?.n_chunks ?? 0 }} chunk 抽样 {{ result?.n_items ?? 0 }} 条，消融实验的分辨率受限于法规包体量。</li>
-        <li>RRF 参数：k=60（经典默认值），oversample=4，未做参数扫描。</li>
+        <li>
+          {{ $t('everkb.eval.limitGroundTruthPrefix') }}<code>relevant_chunk_ids</code
+          >{{ $t('everkb.eval.limitGroundTruthSuffix') }}
+        </li>
+        <li>
+          {{
+            $t('everkb.eval.limitDatasetSize', {
+              chunks: result?.n_chunks ?? 0,
+              items: result?.n_items ?? 0
+            })
+          }}
+        </li>
+        <li>{{ $t('everkb.eval.limitRrfParams') }}</li>
       </ul>
     </div>
   </div>

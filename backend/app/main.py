@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI
 from fastapi.routing import APIRoute
 
 from app.api.apps import router as apps_router
+from app.api.assistant import router as assistant_router
 from app.api.auth import require_admin, router as auth_router
 from app.api.chunks import router as chunks_router
 from app.api.dashboard import router as dashboard_router
@@ -23,6 +24,7 @@ from app.api.documents import router as documents_router
 from app.api.envelope import register_exception_handlers
 from app.api.evals import router as evals_router
 from app.api.kb import router as kb_router
+from app.api.notifications import router as notifications_router
 from app.api.open import router as open_router
 from app.api.reconciliation import router as reconciliation_router
 from app.api.records import router as records_router
@@ -108,7 +110,7 @@ def create_app(
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="EverKB API", version="0.1.0", lifespan=lifespan)
-    register_exception_handlers(app)  # 统一信封异常映射（docs/2026-11-17-api统一信封-设计文档.md）
+    register_exception_handlers(app)  # 统一信封异常映射
     app.state.settings = settings
 
     # ── 基础设施 ────────────────────────────────────────────────
@@ -147,6 +149,8 @@ def create_app(
     app.include_router(traces_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(evals_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(dashboard_router, prefix="/api/v1/admin", dependencies=admin_auth)
+    app.include_router(assistant_router, prefix="/api/v1/admin", dependencies=admin_auth)
+    app.include_router(notifications_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(open_router, prefix="/api/v1")
     _assert_admin_routes_protected(app)
 

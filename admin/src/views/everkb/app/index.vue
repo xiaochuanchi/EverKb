@@ -4,7 +4,7 @@
       <template #left>
         <ElButton type="primary" @click="openCreate">
           <el-icon class="mr-1"><Plus /></el-icon>
-          新建应用
+          {{ $t('everkb.app.create') }}
         </ElButton>
       </template>
     </ArtTableHeader>
@@ -14,10 +14,12 @@
       :data="data"
       :loading="loading"
       empty-height="420"
-      emptyText="还没有应用，点击「新建应用」创建第一个问答入口"
+      :emptyText="$t('everkb.app.emptyText')"
     >
       <template #kb_ids="{ row }">
-        <ElTag v-if="row.kb_ids.length" type="info">{{ row.kb_ids.length }} 个库</ElTag>
+        <ElTag v-if="row.kb_ids.length" type="info">{{
+          $t('everkb.app.kbCount', { n: row.kb_ids.length })
+        }}</ElTag>
         <span v-else>-</span>
       </template>
       <template #api_key="{ row }">
@@ -25,7 +27,11 @@
       </template>
       <template #retrieval_mode="{ row }">
         <ElTag :type="row.retrieval_mode === 'hybrid' ? 'success' : 'info'">
-          {{ row.retrieval_mode === 'hybrid' ? '混合' : '向量' }}
+          {{
+            row.retrieval_mode === 'hybrid'
+              ? $t('everkb.app.modeHybrid')
+              : $t('everkb.app.modeVector')
+          }}
         </ElTag>
       </template>
       <template #score_threshold="{ row }">
@@ -36,41 +42,47 @@
           :model-value="row.enabled"
           :loading="row._statusLoading"
           :inline-prompt="true"
-          active-text="启用"
-          inactive-text="停用"
+          :active-text="$t('everkb.app.enable')"
+          :inactive-text="$t('everkb.app.disable')"
           @change="(v) => handleToggleStatus(row, Boolean(v))"
         />
       </template>
       <template #actions="{ row }">
-        <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
-        <ElButton link type="primary" @click="openResetKey(row)">重置密钥</ElButton>
-        <ElButton link type="danger" @click="handleDelete(row)">删除</ElButton>
+        <ElButton link type="primary" @click="openEdit(row)">{{
+          $t('everkb.app.editAction')
+        }}</ElButton>
+        <ElButton link type="primary" @click="openResetKey(row)">{{
+          $t('everkb.app.resetKey')
+        }}</ElButton>
+        <ElButton link type="danger" @click="handleDelete(row)">{{
+          $t('everkb.app.delete')
+        }}</ElButton>
       </template>
     </ArtTable>
 
     <!-- 新建 / 编辑弹窗 -->
     <ElDialog
       v-model="dialogVisible"
-      :title="editingRow ? '编辑应用' : '新建应用'"
+      :title="editingRow ? $t('everkb.app.edit') : $t('everkb.app.create')"
       width="560px"
       :close-on-click-modal="false"
       @closed="resetForm"
     >
       <ElForm ref="formRef" :model="form" :rules="rules" label-position="top">
-        <ElFormItem label="名称" prop="name">
+        <ElFormItem :label="$t('everkb.app.nameLabel')" prop="name">
           <ElInput
             v-model="form.name"
             maxlength="128"
-            placeholder="应用名称（唯一），如「客服助手」"
+            :placeholder="$t('everkb.app.namePlaceholder')"
           />
         </ElFormItem>
-        <ElFormItem label="挂载知识库" prop="kb_ids">
+        <ElFormItem :label="$t('everkb.app.kbLabel')" prop="kb_ids">
           <ElSelect
             v-model="form.kb_ids"
             multiple
             clearable
             filterable
-            placeholder="选择可检索的知识库（可多选，留空则不检索）"
+            :placeholder="$t('everkb.app.kbPlaceholder')"
             class="w-full"
           >
             <ElOption v-for="kb in kbOptions" :key="kb.id" :label="kb.name" :value="kb.id" />
@@ -80,67 +92,76 @@
           <ElFormItem label="Top K" prop="top_k">
             <ElInputNumber v-model="form.top_k" :min="1" :max="100" :step="1" class="w-full" />
           </ElFormItem>
-          <ElFormItem label="检索模式" prop="retrieval_mode">
+          <ElFormItem :label="$t('everkb.app.retrievalModeLabel')" prop="retrieval_mode">
             <ElSelect v-model="form.retrieval_mode" class="w-full">
-              <ElOption label="纯向量（语义）" value="dense" />
-              <ElOption label="混合检索（语义 + 关键词）" value="hybrid" />
+              <ElOption :label="$t('everkb.app.modeDenseOption')" value="dense" />
+              <ElOption :label="$t('everkb.app.modeHybridOption')" value="hybrid" />
             </ElSelect>
           </ElFormItem>
         </div>
         <div class="form-grid">
-          <ElFormItem label="相似度阈值" prop="score_threshold">
+          <ElFormItem :label="$t('everkb.app.thresholdLabel')" prop="score_threshold">
             <ElInputNumber
               v-model="form.score_threshold"
               :min="0"
               :max="1"
               :step="0.05"
               :precision="2"
-              placeholder="留空不限"
+              :placeholder="$t('everkb.app.thresholdPlaceholder')"
               class="w-full"
             />
           </ElFormItem>
         </div>
-        <ElFormItem label="Prompt 模板" prop="prompt_template">
+        <ElFormItem :label="$t('everkb.app.promptLabel')" prop="prompt_template">
           <ElInput
             v-model="form.prompt_template"
             type="textarea"
             :rows="3"
-            placeholder="留空使用系统默认模板（占位符 {context} / {question}）"
+            :placeholder="$t('everkb.app.promptPlaceholder', { ctx: '{context}', q: '{question}' })"
           />
         </ElFormItem>
-        <ElFormItem label="模型参数（JSON）" prop="model_params">
+        <ElFormItem :label="$t('everkb.app.modelParamsLabel')" prop="model_params">
           <ElInput
             v-model="form.model_params"
             type="textarea"
             :rows="3"
-            placeholder='可选，如 {"model": "doubao-seed-2-0-lite-260428"}'
+            :placeholder="$t('everkb.app.modelParamsPlaceholder', { example: modelParamsExample })"
           />
         </ElFormItem>
       </ElForm>
       <template #footer>
-        <ElButton @click="dialogVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="submitting" @click="handleSubmit">确定</ElButton>
+        <ElButton @click="dialogVisible = false">{{ $t('everkb.app.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="submitting" @click="handleSubmit">{{
+          $t('everkb.app.confirm')
+        }}</ElButton>
       </template>
     </ElDialog>
 
     <!-- 明文 api_key 展示弹窗（创建 / 重置后仅此一次） -->
     <ElDialog
       v-model="keyDialogVisible"
-      title="API Key（仅显示这一次，请妥善保存）"
+      :title="$t('everkb.app.apiKeyTitle')"
       width="520px"
       :close-on-click-modal="false"
       :show-close="false"
     >
-      <ElAlert type="warning" :closable="false" class="mb-3" title="关闭后无法再次查看明文密钥" />
+      <ElAlert
+        type="warning"
+        :closable="false"
+        class="mb-3"
+        :title="$t('everkb.app.apiKeyWarning')"
+      />
       <div class="key-box">
         <code class="mono">{{ plainApiKey }}</code>
         <ElButton link type="primary" @click="copyKey">
           <el-icon class="mr-1"><CopyDocument /></el-icon>
-          复制
+          {{ $t('everkb.app.copy') }}
         </ElButton>
       </div>
       <template #footer>
-        <ElButton type="primary" @click="keyDialogVisible = false">我已保存</ElButton>
+        <ElButton type="primary" @click="keyDialogVisible = false">{{
+          $t('everkb.app.saved')
+        }}</ElButton>
       </template>
     </ElDialog>
   </div>
@@ -149,12 +170,17 @@
 <script setup lang="ts">
   import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import { CopyDocument, Plus } from '@element-plus/icons-vue'
+  import { useI18n } from 'vue-i18n'
   import { createApp, deleteApp, fetchAppList, resetAppKey, updateApp } from '@/api/everkb/app'
   import { fetchKbList } from '@/api/kb'
   import type { ColumnOption } from '@/types/component'
   import { useTable } from '@/hooks/core/useTable'
 
   defineOptions({ name: 'EverKBApp' })
+
+  const { t } = useI18n()
+
+  const modelParamsExample = '{"model": "..."}'
 
   type AppRow = Api.EverKB.App & { _statusLoading?: boolean }
 
@@ -177,20 +203,36 @@
       immediate: true,
       columnsFactory: (): ColumnOption<AppRow>[] => [
         { prop: 'id', label: 'ID', width: 70 },
-        { prop: 'name', label: '名称', minWidth: 160 },
-        { prop: 'kb_ids', label: '挂载库', width: 110, useSlot: true },
+        { prop: 'name', label: t('everkb.app.nameLabel'), minWidth: 160 },
+        { prop: 'kb_ids', label: t('everkb.app.kbColumn'), width: 110, useSlot: true },
         { prop: 'top_k', label: 'Top K', width: 90 },
-        { prop: 'retrieval_mode', label: '检索模式', width: 100, useSlot: true },
-        { prop: 'score_threshold', label: '阈值', width: 90, useSlot: true },
+        {
+          prop: 'retrieval_mode',
+          label: t('everkb.app.retrievalModeLabel'),
+          width: 100,
+          useSlot: true
+        },
+        {
+          prop: 'score_threshold',
+          label: t('everkb.app.thresholdColumn'),
+          width: 90,
+          useSlot: true
+        },
         { prop: 'api_key', label: 'API Key', minWidth: 160, useSlot: true },
-        { prop: 'enabled', label: '状态', width: 100, useSlot: true },
+        { prop: 'enabled', label: t('everkb.app.statusLabel'), width: 100, useSlot: true },
         {
           prop: 'updated_at',
-          label: '更新时间',
+          label: t('everkb.app.updatedAt'),
           width: 170,
           formatter: (row) => row.updated_at?.replace('T', ' ').slice(0, 19) || '-'
         },
-        { prop: 'actions', label: '操作', width: 200, fixed: 'right', useSlot: true }
+        {
+          prop: 'actions',
+          label: t('everkb.app.actions'),
+          width: 200,
+          fixed: 'right',
+          useSlot: true
+        }
       ]
     },
     performance: { enableCache: false }
@@ -212,7 +254,7 @@
     try {
       await updateApp(row.id, { enabled })
       row.enabled = enabled
-      ElMessage.success(enabled ? '已启用' : '已停用')
+      ElMessage.success(enabled ? t('everkb.app.enabledMsg') : t('everkb.app.disabledMsg'))
     } catch {
       // 失败静默（http 层已弹错误）
     } finally {
@@ -237,8 +279,8 @@
 
   const rules: FormRules = {
     name: [
-      { required: true, message: '请输入应用名称', trigger: 'blur' },
-      { min: 1, max: 128, message: '长度 1 ~ 128 位', trigger: 'blur' }
+      { required: true, message: t('everkb.app.nameRequired'), trigger: 'blur' },
+      { min: 1, max: 128, message: t('everkb.app.lengthLimit'), trigger: 'blur' }
     ],
     model_params: [
       {
@@ -247,12 +289,12 @@
           try {
             const obj = JSON.parse(value)
             if (typeof obj !== 'object' || Array.isArray(obj) || obj === null) {
-              callback(new Error('需为 JSON 对象，如 {"model": "..."}'))
+              callback(new Error(t('everkb.app.jsonObjectError', { example: '{"model": "..."}' })))
             } else {
               callback()
             }
           } catch {
-            callback(new Error('JSON 格式错误'))
+            callback(new Error(t('everkb.app.jsonFormatError')))
           }
         },
         trigger: 'blur'
@@ -310,7 +352,7 @@
     try {
       modelParams = parseModelParams()
     } catch {
-      ElMessage.error('模型参数 JSON 格式错误')
+      ElMessage.error(t('everkb.app.modelParamsJsonError'))
       return
     }
     submitting.value = true
@@ -359,9 +401,9 @@
   const copyKey = async () => {
     try {
       await navigator.clipboard.writeText(plainApiKey.value)
-      ElMessage.success('已复制到剪贴板')
+      ElMessage.success(t('everkb.app.copied'))
     } catch {
-      ElMessage.error('复制失败，请手动复制')
+      ElMessage.error(t('everkb.app.copyFailed'))
     }
   }
 
@@ -369,9 +411,13 @@
   const openResetKey = async (row: AppRow) => {
     try {
       await ElMessageBox.confirm(
-        `确定重置应用「${row.name}」的 API Key 吗？旧密钥将立即失效。`,
-        '重置密钥确认',
-        { type: 'warning', confirmButtonText: '重置', cancelButtonText: '取消' }
+        t('everkb.app.resetKeyConfirm', { name: row.name }),
+        t('everkb.app.resetKeyTitle'),
+        {
+          type: 'warning',
+          confirmButtonText: t('everkb.app.reset'),
+          cancelButtonText: t('everkb.app.cancel')
+        }
       )
     } catch {
       return
@@ -387,11 +433,15 @@
   // ── 删除 ─────────────────────────────────────────────────────────
   const handleDelete = async (row: AppRow) => {
     try {
-      await ElMessageBox.confirm(`确定删除应用「${row.name}」吗？`, '删除确认', {
-        type: 'warning',
-        confirmButtonText: '删除',
-        cancelButtonText: '取消'
-      })
+      await ElMessageBox.confirm(
+        t('everkb.app.deleteConfirm', { name: row.name }),
+        t('everkb.app.deleteTitle'),
+        {
+          type: 'warning',
+          confirmButtonText: t('everkb.app.delete'),
+          cancelButtonText: t('everkb.app.cancel')
+        }
+      )
     } catch {
       return
     }

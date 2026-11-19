@@ -14,7 +14,7 @@
   <div class="everkb-placeholder">
     <div class="placeholder-card">
       <h2>{{ title }}</h2>
-      <el-empty :description="description || '页面建设中，按实施排期在批次 1 / 批次 2 实现'" />
+      <el-empty :description="description || $t('everkb.placeholder.underConstruction')" />
     </div>
   </div>
 </template>

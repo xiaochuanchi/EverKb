@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 class KBCreate(BaseModel):
@@ -175,6 +175,14 @@ class AppCreate(BaseModel):
     prompt_template: str | None = Field(default=None, max_length=10_000)
     model_params: dict = Field(default_factory=dict)
 
+    @field_validator("prompt_template")
+    @classmethod
+    def _check_template_placeholders(cls, v: str | None) -> str | None:
+        """自定义 Prompt 模板必须含 {question} 占位符，否则渲染时问题无法注入。"""
+        if v is not None and v.strip() and "{question}" not in v:
+            raise ValueError("prompt_template 必须包含 {question} 占位符")
+        return v
+
 
 class AppPatch(BaseModel):
     """PATCH /apps/{id} 请求体：字段可选，未给的（None）不改。"""
@@ -187,6 +195,14 @@ class AppPatch(BaseModel):
     prompt_template: str | None = Field(default=None, max_length=10_000)
     model_params: dict | None = None
     enabled: bool | None = None
+
+    @field_validator("prompt_template")
+    @classmethod
+    def _check_template_placeholders(cls, v: str | None) -> str | None:
+        """自定义 Prompt 模板必须含 {question} 占位符，否则渲染时问题无法注入。"""
+        if v is not None and v.strip() and "{question}" not in v:
+            raise ValueError("prompt_template 必须包含 {question} 占位符")
+        return v
 
 
 class AppOut(BaseModel):
@@ -243,6 +259,17 @@ class ChatRequest(BaseModel):
     user_key: str = Field(default="", max_length=128)
 
 
+class AssistantChatRequest(BaseModel):
+    """POST /admin/assistant/chat 请求体（admin 侧，JWT 鉴权，管理员模拟问答）。
+
+    与 open 侧 ChatRequest 的差异：管理员显式指定 app_id（可切任意应用），
+    无需 user_key（后端固定 "admin"）。
+    """
+
+    app_id: int
+    question: str = Field(min_length=1, max_length=10_000)
+
+
 class FeedbackRequest(BaseModel):
     """POST /apps/{app_id}/feedback 请求体。"""
 
@@ -260,6 +287,7 @@ class QaRecordOut(BaseModel):
 
     id: int
     app_id: int
+    is_admin: bool = False
     user_key: str
     session_id: str | None = None
     question: str
@@ -471,3 +499,31 @@ class DashboardOut(BaseModel):
     recent_qa: list[DashboardRecentQa]
     # 环比（近 7 天 vs 前 7 天新增量 / 金额）
     kpi_trend: dict[str, DashboardKpiTrend]
+
+
+# ── 通知中心 ───────────────────────────────────────────────────
+
+
+class NotificationOut(BaseModel):
+    """通知响应体（对齐 models.Notification 列）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    title: str
+    content: str
+    resource_type: str
+    resource_id: int | None = None
+    is_read: bool
+    created_at: datetime
+
+
+class NotificationPageOut(BaseModel):
+    """GET /notifications 分页响应体。"""
+
+    total: int
+    unread: int
+    page: int
+    size: int
+    items: list[NotificationOut]

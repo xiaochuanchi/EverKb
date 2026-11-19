@@ -247,6 +247,43 @@ declare namespace Api {
       api_key: string
     }
 
+    /* ============ 智能助手（admin 机器人抽屉，Task: 真问答） ============ */
+
+    /** POST /admin/assistant/chat 请求体（管理员模拟问答，后端 AssistantChatRequest） */
+    interface AssistantChatRequest {
+      app_id: number
+      question: string
+    }
+
+    /** SSE 收尾帧（后端 chat 收尾事件 { grounded, citations }） */
+    interface AssistantChatDone {
+      grounded: boolean
+      citations: Citation[]
+    }
+
+    /* ============ 通知中心 ============ */
+
+    /** 通知（后端 NotificationOut） */
+    interface Notification {
+      id: number
+      type: string
+      title: string
+      content: string
+      resource_type: string
+      resource_id: number | null
+      is_read: boolean
+      created_at: string
+    }
+
+    /** GET /notifications 分页响应（后端 NotificationPageOut） */
+    interface NotificationPage {
+      total: number
+      unread: number
+      page: number
+      size: number
+      items: Notification[]
+    }
+
     /* ============ 问答记录（Task 22） ============ */
 
     /** 引用详情（citations 单元素，后端 build_context 下发） */
@@ -264,6 +301,7 @@ declare namespace Api {
     interface QaRecord {
       id: number
       app_id: number
+      is_admin: boolean
       user_key: string
       session_id: string | null
       question: string
