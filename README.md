@@ -37,6 +37,16 @@
 - 🗄️ **可插拔存储**：本地磁盘（默认，开箱即跑）/ 阿里云 OSS
 - 🔐 **应用级 API Key**：每个问答应用独立 key，创建 / 重置时一次性展示明文，其余脱敏
 
+## 界面预览
+
+| Trace 查看器（Span 树 · 时间轴 · 耗时下钻） | 平台驾驶舱（KPI · 14 天趋势 · 分布） |
+| :---: | :---: |
+| <img src="assets/screenshots/trace-viewer.png" width="460" alt="Trace 查看器：问答链路 Span 树与时间轴"> | <img src="assets/screenshots/dashboard.png" width="460" alt="平台驾驶舱：KPI 卡片与趋势图"> |
+
+| 流式问答 + 引用溯源（用户端） | 检索评测三路消融对比 |
+| :---: | :---: |
+| <img src="assets/screenshots/chat-citations.png" width="460" alt="流式问答与法条引用卡片"> | <img src="assets/screenshots/eval-compare.png" width="460" alt="纯向量 / 纯 BM25 / RRF 混合三路指标对比"> |
+
 ## 检索评测
 
 EverKB 不只「有」检索能力，还用一套可复现的评测工程**量化**了它。基于 12 部「网络安全与数据合规」法规（233 chunk）构建合成评测集（90 条，seed=42），对三种检索方式做消融实验：
