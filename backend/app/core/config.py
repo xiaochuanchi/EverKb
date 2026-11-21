@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.3
     chat_rate_limit_per_min: int = 60
 
+    # ── 体验账号按 token 成本计费（单位：元 / 百万 token）───────────
+    # 默认值为保守估算，上线前请按火山方舟实际单价调整（.env 同名字段覆盖）。
+    # 预留额度用「输入上限 + 输出上限」估算，回答结束后按服务商返回的真实 usage 结算，
+    # 多预留的部分自动退回，因此预留值宁可偏大，不会多扣。
+    llm_price_in_cny_per_million: float = 0.8
+    llm_price_out_cny_per_million: float = 2.0
+    embedding_price_cny_per_million: float = 0.5
+    trial_reserve_input_tokens: int = 4000
+    trial_reserve_output_tokens: int = 800
+
     # ── 鉴权（管理端 JWT；账号存 admin_user 表，首账号用 scripts/seed_admin.py
     #    创建——2026-11-17 Task 14 回收 admin_username/admin_password_hash 遗留字段）──
     jwt_secret: str = "change-me"

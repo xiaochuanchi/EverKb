@@ -47,7 +47,9 @@ export default [
         // 合并从 autoImportConfig 中读取的全局变量配置
         ...autoImportConfig.globals,
         // TypeScript 全局命名空间
-        Api: 'readonly'
+        Api: 'readonly',
+        // vite define 注入的产品版本号（.vue 不受 tseslint 关闭 no-undef 影响）
+        __APP_VERSION__: 'readonly'
       }
     },
     rules: {

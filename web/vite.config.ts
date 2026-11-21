@@ -1,9 +1,15 @@
 /// <reference types="vite/client" />
 
+import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 
 import vue from "@vitejs/plugin-vue";
 import { defineConfig, loadEnv } from "vite";
+
+// 产品版本号：仓库根 VERSION 单一源同步进 package.json，构建时注入 __APP_VERSION__
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as {
+  version: string;
+};
 
 /**
  * dev 代理：前端请求 /api/** 转发到本机 FastAPI（uvicorn 默认 8000）。
@@ -13,6 +19,9 @@ import { defineConfig, loadEnv } from "vite";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     plugins: [vue()],
     resolve: {
       alias: {

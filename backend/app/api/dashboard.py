@@ -1,6 +1,6 @@
 """平台概况 API（dashboard 运营驾驶舱，挂载于 /api/v1/admin/dashboard）。
 
-一次性聚合概况页所需全部统计：
+一次性聚合概况页所需全部统计（仅当前企业）：
 - 计数：知识库 / 文档 / chunk / 应用 / 问答 / 累计花费 / 失败文档 / 漂移文档；
 - 趋势：近 14 天每日问答数（缺失日期补 0）；
 - 环比：近 7 天 vs 前 7 天（各实体新增量、花费金额）的涨跌；
@@ -9,6 +9,7 @@
 
 漂移文档数依赖 VectorClient（复用对账扫描逻辑），仅在已完成文档上统计，
 未完成文档天然 chunk 数与向量未对齐，不参与对账（与 /reconciliation 同口径）。
+多租户（M1/M5）：require_enterprise，所有统计按 enterprise_id 过滤。
 """
 from __future__ import annotations
 
@@ -18,10 +19,11 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.authz import require_enterprise
 from app.api.envelope import EnvelopeRoute
 from app.api.reconciliation import _scan_doc
 from app.core.db import get_db
-from app.models import App, Chunk, Document, DocumentStatus, KnowledgeBase, QaRecord
+from app.models import AdminUser, App, Chunk, Document, DocumentStatus, KnowledgeBase, QaRecord
 from app.schemas import (
     DashboardDocStatusItem,
     DashboardKpiTrend,
@@ -52,28 +54,54 @@ def _pct_change(current: float, previous: float) -> float | None:
 
 @router.get("", response_model=DashboardOut)
 def dashboard(
+    user: AdminUser = Depends(require_enterprise),
     db: Session = Depends(get_db),
     vector: VectorClient = Depends(_vector),
 ) -> dict:
-    """返回概况页全部统计。"""
-    kb_count = db.scalar(select(func.count()).select_from(KnowledgeBase)) or 0
-    doc_count = db.scalar(select(func.count()).select_from(Document)) or 0
-    chunk_count = db.scalar(select(func.count()).select_from(Chunk)) or 0
-    app_count = db.scalar(select(func.count()).select_from(App)) or 0
-    qa_count = db.scalar(select(func.count()).select_from(QaRecord)) or 0
-    total_cost = db.scalar(select(func.coalesce(func.sum(QaRecord.total_cost), 0))) or 0
+    """返回概况页全部统计（仅当前企业）。"""
+    eid = user.enterprise_id
+    kb_count = db.scalar(
+        select(func.count()).select_from(KnowledgeBase).where(KnowledgeBase.enterprise_id == eid)
+    ) or 0
+    doc_count = db.scalar(
+        select(func.count()).select_from(Document).where(Document.enterprise_id == eid)
+    ) or 0
+    # chunk 无 enterprise_id，经 document 归属过滤
+    chunk_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(Chunk)
+            .join(Document, Chunk.document_id == Document.id)
+            .where(Document.enterprise_id == eid)
+        )
+        or 0
+    )
+    app_count = db.scalar(
+        select(func.count()).select_from(App).where(App.enterprise_id == eid)
+    ) or 0
+    qa_count = db.scalar(
+        select(func.count()).select_from(QaRecord).where(QaRecord.enterprise_id == eid)
+    ) or 0
+    total_cost = (
+        db.scalar(
+            select(func.coalesce(func.sum(QaRecord.total_cost), 0)).where(QaRecord.enterprise_id == eid)
+        )
+        or 0
+    )
     failed_doc_count = (
         db.scalar(
             select(func.count())
             .select_from(Document)
-            .where(Document.status == DocumentStatus.FAILED)
+            .where(Document.enterprise_id == eid, Document.status == DocumentStatus.FAILED)
         )
         or 0
     )
 
     # ── 漂移文档数（复用对账扫描逻辑，仅已完成文档）─────────────────
     completed_docs = db.scalars(
-        select(Document).where(Document.status == DocumentStatus.COMPLETED)
+        select(Document).where(
+            Document.enterprise_id == eid, Document.status == DocumentStatus.COMPLETED
+        )
     ).all()
     drift_doc_count = sum(1 for d in completed_docs if _scan_doc(db, vector, d))
 
@@ -81,7 +109,7 @@ def dashboard(
     since = datetime.now() - timedelta(days=_TREND_DAYS - 1)
     rows = db.execute(
         select(func.date(QaRecord.created_at), func.count())
-        .where(QaRecord.created_at >= since)
+        .where(QaRecord.enterprise_id == eid, QaRecord.created_at >= since)
         .group_by(func.date(QaRecord.created_at))
         .order_by(func.date(QaRecord.created_at))
     ).all()
@@ -96,6 +124,7 @@ def dashboard(
     # ── 文档状态分布（按 status 分组，全状态枚举补 0）─────────────
     status_rows = db.execute(
         select(Document.status, func.count())
+        .where(Document.enterprise_id == eid)
         .group_by(Document.status)
         .order_by(Document.status)
     ).all()
@@ -107,7 +136,9 @@ def dashboard(
 
     # ── 检索模式分布（dense/hybrid）──────────────────────────────
     mode_rows = db.execute(
-        select(App.retrieval_mode, func.count()).group_by(App.retrieval_mode)
+        select(App.retrieval_mode, func.count())
+        .where(App.enterprise_id == eid)
+        .group_by(App.retrieval_mode)
     ).all()
     retrieval_modes = [
         DashboardRetrievalModeItem(mode=m, count=c) for m, c in mode_rows
@@ -115,7 +146,10 @@ def dashboard(
 
     # ── 最近问答 Top 5 ────────────────────────────────────────────
     recent_rows = db.scalars(
-        select(QaRecord).order_by(QaRecord.created_at.desc()).limit(_RECENT_QA_N)
+        select(QaRecord)
+        .where(QaRecord.enterprise_id == eid)
+        .order_by(QaRecord.created_at.desc())
+        .limit(_RECENT_QA_N)
     ).all()
     recent_qa = [
         DashboardRecentQa(
@@ -135,18 +169,41 @@ def dashboard(
     prev_start = now - timedelta(days=_MOM_WINDOW_DAYS * 2)
 
     def _count_range(model) -> tuple[int, int]:
-        """统计 [prev_start, cur_start) 与 [cur_start, now) 两段的新增行数。"""
+        """统计 [prev_start, cur_start) 与 [cur_start, now) 两段的新增行数（仅当前企业）。"""
         prev = db.scalar(
             select(func.count())
             .select_from(model)
-            .where(model.created_at >= prev_start, model.created_at < cur_start)
+            .where(
+                model.enterprise_id == eid,
+                model.created_at >= prev_start,
+                model.created_at < cur_start,
+            )
         ) or 0
         cur = db.scalar(
             select(func.count())
             .select_from(model)
-            .where(model.created_at >= cur_start)
+            .where(model.enterprise_id == eid, model.created_at >= cur_start)
         ) or 0
         return cur, prev
+
+    def _count_range_chunk() -> tuple[int, int]:
+        """chunk 无 enterprise_id，经 document 归属过滤的两段环比。"""
+        def _count(start, end):
+            return (
+                db.scalar(
+                    select(func.count())
+                    .select_from(Chunk)
+                    .join(Document, Chunk.document_id == Document.id)
+                    .where(
+                        Document.enterprise_id == eid,
+                        Chunk.created_at >= start,
+                        Chunk.created_at < end,
+                    )
+                )
+                or 0
+            )
+
+        return _count(cur_start, datetime.now()), _count(prev_start, cur_start)
 
     def _build_kpi(cur: int | float, prev: int | float) -> DashboardKpiTrend:
         return DashboardKpiTrend(current=cur, previous=prev, pct_change=_pct_change(cur, prev))
@@ -154,19 +211,21 @@ def dashboard(
     # 花费环比：两段金额合计（total_cost）
     prev_cost = db.scalar(
         select(func.coalesce(func.sum(QaRecord.total_cost), 0)).where(
-            QaRecord.created_at >= prev_start, QaRecord.created_at < cur_start
+            QaRecord.enterprise_id == eid,
+            QaRecord.created_at >= prev_start,
+            QaRecord.created_at < cur_start,
         )
     ) or 0
     cur_cost = db.scalar(
         select(func.coalesce(func.sum(QaRecord.total_cost), 0)).where(
-            QaRecord.created_at >= cur_start
+            QaRecord.enterprise_id == eid, QaRecord.created_at >= cur_start
         )
     ) or 0
 
     kpi_trend = {
         "kb": _build_kpi(*_count_range(KnowledgeBase)),
         "doc": _build_kpi(*_count_range(Document)),
-        "chunk": _build_kpi(*_count_range(Chunk)),
+        "chunk": _build_kpi(*_count_range_chunk()),
         "app": _build_kpi(*_count_range(App)),
         "qa": _build_kpi(*_count_range(QaRecord)),
         "cost": _build_kpi(float(cur_cost), float(prev_cost)),

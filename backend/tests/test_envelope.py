@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from fastapi.testclient import TestClient
 
 from app.api.envelope import EnvelopeRoute, register_exception_handlers
+from app.main import APP_VERSION
 
 
 def _mini_app() -> FastAPI:
@@ -157,7 +158,7 @@ def test_health_stays_bare(client):
     """探活端点豁免信封（route_class 不得污染 /health）。"""
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json() == {"status": "ok", "version": APP_VERSION}
 
 
 def test_direct_constructed_route_envelopes():

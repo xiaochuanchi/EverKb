@@ -19,6 +19,7 @@ def _seed_trace(client, *, trace_id, n=4) -> list[TraceSpan]:
         span = TraceSpan(
             trace_id=trace_id,
             parent_span_id=parent_id,
+            enterprise_id=1,
             name=f"span{i}",
             span_type=["embedding", "retrieval", "db", "llm"][i % 4],
             start_time=base + timedelta(milliseconds=i * 10),
@@ -40,7 +41,7 @@ def _seed_trace(client, *, trace_id, n=4) -> list[TraceSpan]:
 
 def _seed_record(client, *, app_id=1) -> QaRecord:
     session = client.app.state.session_factory()
-    rec = QaRecord(app_id=app_id, user_key="u", question="q", answer="a", grounded=True)
+    rec = QaRecord(app_id=app_id, enterprise_id=1, user_key="u", question="q", answer="a", grounded=True)
     session.add(rec)
     session.commit()
     session.refresh(rec)
@@ -104,6 +105,7 @@ def _seed_pipeline_trace(client, *, doc_id, n=4) -> None:
         span = TraceSpan(
             trace_id=-doc_id,
             parent_span_id=parent_id,
+            enterprise_id=1,
             name=span_type,
             span_type=span_type,
             start_time=base + timedelta(milliseconds=i * 10),
@@ -119,10 +121,10 @@ def _seed_pipeline_trace(client, *, doc_id, n=4) -> None:
 
 def _seed_doc(client, *, name="法规.md") -> Document:
     session = client.app.state.session_factory()
-    kb = KnowledgeBase(name="kb-eval", description="评测库")
+    kb = KnowledgeBase(name="kb-eval", description="评测库", enterprise_id=1)
     session.add(kb)
     session.flush()
-    doc = Document(kb_id=kb.id, name=name, file_type="md", file_size=10, status=6)
+    doc = Document(kb_id=kb.id, name=name, file_type="md", file_size=10, status=6, enterprise_id=1)
     session.add(doc)
     session.commit()
     session.refresh(doc)

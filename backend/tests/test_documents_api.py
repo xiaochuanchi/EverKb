@@ -114,7 +114,13 @@ def test_upload_oversize_413(tmp_path):
     )
     with TestClient(app) as c:
         # Task 14：admin 路由整包挂鉴权——自建客户端需先登录再带 token
-        user = seed_admin(app)
+        # M5：企业侧接口需 ent_admin + 绑企业
+        from app.models import Enterprise, EnterpriseStatus, UserRole
+
+        with app.state.session_factory() as s:
+            s.add(Enterprise(id=1, name="测试企业", status=EnterpriseStatus.ACTIVE))
+            s.commit()
+        user = seed_admin(app, role=UserRole.ENT_ADMIN, enterprise_id=1)
         c.headers["Authorization"] = f"Bearer {create_access_token(user.id, settings)}"
         # 最小 docx（zip 容器开销）也远超 1000 字节上限
         r = _upload(c, _kb(c), "大文件.docx", make_docx_bytes([("标题", ["正文"])]))

@@ -14,7 +14,8 @@ BASE = "/api/v1/admin/notifications"
 def _seed_notification(session, *, type=NotificationType.DOC_COMPLETED, title="t",
                        content="c", is_read=False, resource_id=1) -> Notification:
     n = Notification(type=type, title=title, content=content,
-                     resource_type="document", resource_id=resource_id, is_read=is_read)
+                     resource_type="document", resource_id=resource_id, is_read=is_read,
+                     enterprise_id=1)
     session.add(n)
     session.commit()
     session.refresh(n)

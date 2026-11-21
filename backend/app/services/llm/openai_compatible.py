@@ -91,6 +91,10 @@ class OpenAICompatibleLLM:
         }
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        # 流式请求显式要求末帧回 usage（OpenAI 兼容协议 stream_options.include_usage），
+        # 否则厂商不回真实 token 数、只能按字符估算，中文场景成本高估 1.5~2 倍（方案 §6）
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
         return payload
 
     def _post_with_retry(self, payload: dict) -> httpx.Response:
@@ -138,6 +142,8 @@ class OpenAICompatibleLLM:
 
     def _parse_stream(self, resp: httpx.Response):
         finished = False
+        tokens_in = 0
+        tokens_out = 0
         for raw_line in resp.iter_lines():
             line = raw_line.strip()
             if not line or not line.startswith("data:"):
@@ -145,19 +151,25 @@ class OpenAICompatibleLLM:
             payload = line[len("data:"):].strip()
             if payload == "[DONE]":
                 finished = True
-                yield StreamChunk(delta="", finish=True)
                 break
             try:
                 data = httpx.Response(200, content=payload.encode("utf-8")).json()
             except (ValueError, TypeError):
                 # 个别厂商的 keep-alive 或非 JSON 心跳行，跳过
                 continue
+            # 部分厂商在末帧（delta 为空）回 usage，必须收集才能按 token 计费
+            usage = data.get("usage")
+            if isinstance(usage, dict):
+                try:
+                    tokens_in = int(usage.get("prompt_tokens") or tokens_in)
+                    tokens_out = int(usage.get("completion_tokens") or tokens_out)
+                except (TypeError, ValueError):
+                    pass
             delta = self._extract_delta(data)
             if delta:
                 yield StreamChunk(delta=delta)
-        if not finished:
-            # 流意外结束（无 [DONE]），补一个 finish 标记让调用方知悉
-            yield StreamChunk(delta="", finish=True)
+        # 统一在末帧带 usage 收尾：[DONE] 正常结束与流意外中断共用同一出口
+        yield StreamChunk(delta="", finish=True, tokens_in=tokens_in, tokens_out=tokens_out)
 
     @staticmethod
     def _extract_delta(data: dict) -> str:

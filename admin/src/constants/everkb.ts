@@ -34,3 +34,11 @@ export const FEEDBACK = {
   Good: 1,
   Bad: -1
 } as const
+
+/** 企业生命周期状态（models.EnterpriseStatus）：1 试用 / 2 正式 / 3 冻结 / 4 已清理 */
+export const ENTERPRISE_STATUS = {
+  Trial: 1,
+  Active: 2,
+  Frozen: 3,
+  Purged: 4
+} as const

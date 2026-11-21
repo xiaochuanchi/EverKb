@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import check_rate_limit, require_api_key
 from app.core.db import init_db, make_engine, make_session_factory
-from app.models import App
+from app.models import App, Enterprise, EnterpriseStatus
 from app.services.ratelimit import FakeRateLimiter
 
 
@@ -99,3 +99,40 @@ def test_rate_limit_per_app_isolated():
         # A 超限，但 B 是独立窗口
         assert c.get("/probe-limited", headers={"X-API-Key": "sk-test-key"}).status_code == 429
         assert c.get("/probe-limited", headers={"X-API-Key": "sk-key-b"}).status_code == 200
+
+
+def test_frozen_enterprise_app_403():
+    """M2：冻结企业的 app，open 侧鉴权一律 403（否则 API Key 是无限费洞口，方案 §6）。"""
+    app = _make_app()
+    with app.state.session_factory() as session:
+        ent = Enterprise(name="冻结企业", status=EnterpriseStatus.FROZEN)
+        session.add(ent)
+        session.flush()
+        session.add(App(name="冻结应用", kb_ids=[], api_key="sk-frozen", enabled=True, enterprise_id=ent.id))
+        session.commit()
+    with TestClient(app) as c:
+        r = c.get("/probe", headers={"X-API-Key": "sk-frozen"})
+        assert r.status_code == 403
+
+
+def test_active_enterprise_app_passes():
+    """M2：正常（ACTIVE）企业的 app 不冻结，鉴权通过。"""
+    app = _make_app()
+    with app.state.session_factory() as session:
+        ent = Enterprise(name="正常企业", status=EnterpriseStatus.ACTIVE)
+        session.add(ent)
+        session.flush()
+        session.add(App(name="正常应用", kb_ids=[], api_key="sk-active", enabled=True, enterprise_id=ent.id))
+        session.commit()
+    with TestClient(app) as c:
+        r = c.get("/probe", headers={"X-API-Key": "sk-active"})
+        assert r.status_code == 200
+
+
+def test_platform_app_without_enterprise_passes():
+    """M2：enterprise_id=NULL 的 app 视为平台资产，不冻结、鉴权通过。"""
+    app = _make_app()
+    _seed_app(app)  # 默认 enterprise_id=None
+    with TestClient(app) as c:
+        r = c.get("/probe", headers={"X-API-Key": "sk-test-key"})
+        assert r.status_code == 200

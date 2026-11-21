@@ -15,6 +15,8 @@ const router = useRouter();
 
 const username = ref("");
 const password = ref("");
+// 产品版本号（vite define 注入；模板直用全局常量过不了 vue-tsc）
+const appVersion = __APP_VERSION__;
 
 function handleLogin(): void {
   if (!username.value.trim()) {
@@ -40,6 +42,7 @@ function handleLogin(): void {
       <el-input v-model="username" placeholder="用户名" />
       <el-input v-model="password" type="password" show-password placeholder="密码" />
       <el-button type="primary" @click="handleLogin">登录</el-button>
+      <p class="version">v{{ appVersion }}</p>
     </section>
   </main>
 </template>
@@ -67,6 +70,12 @@ function handleLogin(): void {
 }
 .subtitle {
   margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+}
+.version {
+  margin: 4px 0 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
   text-align: center;

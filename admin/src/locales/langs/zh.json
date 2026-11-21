@@ -278,7 +278,12 @@
       "trace": "Trace 查看器",
       "traceDetail": "Trace 详情",
       "reconcile": "对账工具",
-      "eval": "检索评测"
+      "eval": "检索评测",
+      "wallet": "企业钱包"
+    },
+    "platform": {
+      "title": "运营工作台",
+      "enterprise": "企业管理"
     }
   },
   "table": {
@@ -348,6 +353,14 @@
       "docStatusUnknown": "状态{n}",
       "alertFailedDocs": "失败文档",
       "alertDriftDocs": "向量漂移"
+    },
+    "wallet": {
+      "balanceTitle": "钱包余额",
+      "remaining": "可用额度",
+      "budget": "预算额度",
+      "spent": "已结算",
+      "reserved": "在途预留",
+      "refresh": "刷新"
     },
     "placeholder": {
       "underConstruction": "页面建设中，按实施排期在批次 1 / 批次 2 实现"
@@ -678,7 +691,7 @@
       "columnIssueType": "漂移类型"
     },
     "assistant": {
-      "title": "Art Bot",
+      "title": "EverKb Bot",
       "online": "在线",
       "offline": "离线",
       "simulateApp": "模拟应用",
@@ -696,5 +709,37 @@
       "viewSource": "查看原文",
       "ungrounded": "未基于知识库，自由回答"
     }
+  },
+  "platform": {
+    "enterprise": {
+      "listTitle": "企业列表",
+      "create": "开通企业",
+      "name": "企业名",
+      "namePlaceholder": "请输入企业名",
+      "trialDays": "试用天数",
+      "budget": "初始额度（元）",
+    "topup": "充值",
+    "enterprise": "企业",
+    "amount": "充值金额（元）",
+    "invites": "邀请码",
+    "inviteListTitle": "邀请码管理",
+    "createInvite": "生成邀请码",
+    "inviteCode": "邀请码",
+    "maxUses": "可用次数",
+    "used": "已用",
+    "status": "状态",
+    "enabled": "启用",
+    "disabled": "已停用",
+    "note": "备注",
+    "notePlaceholder": "备注（如：发给张三）",
+    "createdAt": "创建时间",
+    "newInviteCode": "新邀请码",
+    "copy": "复制",
+    "copied": "已复制",
+    "inviteHint": "把邀请码发给企业管理员，对方凭码在注册页自设账号密码，注册后即成为该企业的企业管理员（ENT_ADMIN）。",
+    "disable": "停用",
+    "confirmDisable": "确认停用该邀请码？停用后无法再凭此码注册（已注册账号不受影响）。",
+    "accountNotShown": "说明：账号密码由注册者自设，平台不存储明文密码，无法查看。"
   }
+}
 }

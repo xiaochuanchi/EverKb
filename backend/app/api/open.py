@@ -18,6 +18,7 @@ chat 端点显式 response_class=StreamingResponse 退出 EnvelopeRoute（流式
 import json
 import time
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -29,6 +30,7 @@ from app.core.db import get_db
 from app.models import App, Document, Feedback, QaRecord, SpanType
 from app.schemas import ChatRequest, FeedbackRequest
 from app.services.llm import ChatMessage
+from app.services.quota import actual_amount, reserve, reserve_amount, refund, settle
 from app.services.rag import DEFAULT_PROMPT_TEMPLATE, build_context, retrieve
 from app.services.trace import Tracer
 
@@ -50,17 +52,26 @@ def chat(
     app: App = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
-    """SSE 流式问答（X-API-Key 鉴权 + 限流）。"""
+    """SSE 流式问答（X-API-Key 鉴权 + 限流 + 企业钱包计费）。"""
     app = _get_matching_app(app, app_id)
     state = request.app.state
     embedder = state.embedder
     vector = state.vector
     llm = state.llm
     bm25 = getattr(state, "bm25", None)
+    t0 = time.monotonic()  # 端到端计时起点（单调钟测时长，见 models.py 修订纪律）
+
+    # ── 计费：企业钱包 reserve（app 未归属企业时不扣费，平台资产免费）──
+    reserved = None
+    if app.enterprise_id is not None:
+        reserved = reserve_amount(state.settings, payload.question)
+        if not reserve(db, app.enterprise_id, reserved):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="企业额度不足，请联系管理员充值")
 
     # ── 先插 qa_record 拿 id（answer 暂空），trace_id = qa_record.id ──
     record = QaRecord(
         app_id=app.id,
+        enterprise_id=app.enterprise_id,
         user_key=payload.user_key,
         question=payload.question,
         answer="",
@@ -113,6 +124,9 @@ def chat(
 
     def generate():
         answer_parts: list[str] = []
+        tokens_in = 0
+        tokens_out = 0
+        failed = False
         try:
             with tracer.span("gen_ai.chat", SpanType.LLM, parent_id=parent_id) as ls:
                 ls.set_input_summary(prompt[:500])
@@ -121,14 +135,33 @@ def chat(
                         answer_parts.append(chunk.delta)
                         yield _sse({"delta": chunk.delta})
                     if chunk.finish:
+                        # 末帧带厂商回传的真实 usage；没有则按字符数估算
+                        tokens_in = chunk.tokens_in
+                        tokens_out = chunk.tokens_out
+                        ls.set_tokens(in_tokens=tokens_in, out_tokens=tokens_out)
                         ls.set_output_summary("".join(answer_parts)[:500])
         except Exception as e:
             # LLM 异常：流已中断，尽力落库失败态（不抛，SSE 已开始）
+            failed = True
             answer_parts.append(f"[生成失败: {e}]")
         answer = "".join(answer_parts)
+        cost = actual_amount(state.settings, payload.question, prompt, answer, tokens_in, tokens_out)
+        record.total_cost = Decimal("0") if failed else cost
+        # ── 结算：失败退预留，成功按真实成本结算（企业钱包）──
+        if reserved is not None:
+            if failed:
+                refund(db, app.enterprise_id, reserved)
+            else:
+                settle(
+                    db, app.enterprise_id, reserved, cost,
+                    ref_id=record.id, ref_type="qa_record",
+                )
         # 收尾事件 + 落库（在生成器末尾，保证流结束后才写库）
-        yield _sse({"grounded": grounded, "citations": citations})
-        _persist(db, record, tracer, answer, grounded, citations, hits)
+        yield _sse(
+            {"grounded": grounded, "citations": citations, "cost": float(record.total_cost or 0)}
+        )
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        _persist(db, record, tracer, answer, grounded, citations, hits, latency_ms)
 
     return StreamingResponse(
         generate(),
@@ -184,7 +217,16 @@ def _model_snapshot(settings) -> dict:
     }
 
 
-def _persist(db: Session, record: QaRecord, tracer: Tracer, answer: str, grounded: bool, citations: list, hits) -> None:
+def _persist(
+    db: Session,
+    record: QaRecord,
+    tracer: Tracer,
+    answer: str,
+    grounded: bool,
+    citations: list,
+    hits,
+    latency_ms: int,
+) -> None:
     """流结束后回填 qa_record + 批量落 trace_span（失败吞掉，不打断已完成的 SSE）。"""
     try:
         record.answer = answer
@@ -193,6 +235,7 @@ def _persist(db: Session, record: QaRecord, tracer: Tracer, answer: str, grounde
         record.chunk_ids = [h.chunk_id for h in hits]
         record.doc_ids = list({h.doc_id for h in hits})
         record.scores = [h.score for h in hits]
+        record.latency_ms = latency_ms
         db.commit()
         tracer.flush(db)
         db.commit()

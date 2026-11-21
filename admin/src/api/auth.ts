@@ -1,4 +1,5 @@
 import request from '@/utils/http'
+import { useUserStore } from '@/store/modules/user'
 
 /**
  * 登录（POST /api/v1/admin/auth/login）
@@ -13,23 +14,52 @@ export function fetchLogin(params: Api.Auth.LoginParams) {
 }
 
 /**
+ * 凭邀请码注册体验账号（POST /api/v1/admin/auth/register）
+ * 注册成功即返回 token，前端可直接置为登录态。
+ */
+export function fetchRegister(params: Api.Auth.RegisterParams) {
+  return request.post<Api.Auth.RegisterResponse>({
+    url: '/api/v1/admin/auth/register',
+    params
+  })
+}
+
+/**
  * 获取当前登录账号信息（GET /api/v1/admin/auth/me）
  *
- * 后端只回 {id, username, is_active, created_at}；此处映射为模板 UserInfo
- * 结构供 store/路由守卫消费。单管理员后台，roles 固定 R_SUPER。
+ * 后端回真实 role（platform/ent_admin/member）与 enterprise_id；此处按角色映射
+ * 前端角色码（M5 商业化多租户角色分流）：
+ *   platform   → R_PLATFORM（运营工作台）
+ *   ent_admin  → R_ENT_ADMIN（企业控制台）
+ *   member     → R_MEMBER（预留，随成员账号体系后移）
+ * 菜单按 meta.roles 过滤，三套世界互不串门。
  */
 export async function fetchGetUserInfo() {
   const me = await request.get<Api.Auth.MeResponse>({
     url: '/api/v1/admin/auth/me'
   })
+  const roleMap: Record<string, string> = {
+    platform: 'R_PLATFORM',
+    ent_admin: 'R_ENT_ADMIN',
+    member: 'R_MEMBER'
+  }
   const userInfo: Api.Auth.UserInfo = {
     userId: me.id,
     userName: me.username,
-    roles: ['R_SUPER'],
+    roles: [roleMap[me.role] || 'R_MEMBER'],
     buttons: [],
-    email: ''
+    email: '',
+    role: me.role,
+    enterpriseId: me.enterprise_id
   }
   return userInfo
+}
+
+/** 刷新当前账号信息（问答扣费后更新额度展示） */
+export async function refreshUserInfo() {
+  const info = await fetchGetUserInfo()
+  useUserStore().setUserInfo(info)
+  return info
 }
 
 /**

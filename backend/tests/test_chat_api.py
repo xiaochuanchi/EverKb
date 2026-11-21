@@ -114,6 +114,7 @@ def test_chat_persists_qa_record_and_spans(client):
     assert rec.user_key == "u1"
     assert 1003 in rec.doc_ids
     assert rec.citations == final["citations"]
+    assert rec.latency_ms > 0  # 端到端耗时物化（回归锁定：字段曾有写入缺失恒 0）
 
     spans = session.query(TraceSpan).filter(TraceSpan.trace_id == rec.id).all()
     assert len(spans) >= 1  # 至少 embedding/retrieval/db/llm 若干 span

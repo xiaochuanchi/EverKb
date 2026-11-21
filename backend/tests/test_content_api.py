@@ -173,12 +173,18 @@ def test_lifespan_reset_spares_extracted_status(tmp_path):
 
     app1 = make_app()
     init_db(app1.state.engine)
-    seed_admin(app1)
+    # M5：企业侧接口需 ent_admin + 绑企业
+    from app.models import Enterprise, EnterpriseStatus, UserRole
+
+    with app1.state.session_factory() as s:
+        s.add(Enterprise(id=1, name="测试企业", status=EnterpriseStatus.ACTIVE))
+        s.commit()
+    ent_admin = seed_admin(app1, role=UserRole.ENT_ADMIN, enterprise_id=1)
     with TestClient(app1) as c:
         c.headers["Authorization"] = c.headers.get("Authorization", "")  # 占位，下面真实签发
         from app.core.security import create_access_token
 
-        c.headers["Authorization"] = f"Bearer {create_access_token(1, app1.state.settings)}"
+        c.headers["Authorization"] = f"Bearer {create_access_token(ent_admin.id, app1.state.settings)}"
         kb_id = _kb(c, "跨重启库")
         doc_id = _extract(c, kb_id)
         r = c.put(f"{BASE}/documents/{doc_id}/content", json={"content": "# 重启后仍在\n\n重启后正文"})

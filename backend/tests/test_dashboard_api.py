@@ -19,12 +19,12 @@ def _seed_dashboard_data(client):
     """
     session = client.app.state.session_factory()
 
-    kb = KnowledgeBase(name="kb-a", description="d")
+    kb = KnowledgeBase(name="kb-a", description="d", enterprise_id=1)
     session.add(kb)
     session.flush()
 
-    d1 = Document(kb_id=kb.id, name="d1.md", file_type="md", file_size=10, status=6)
-    d2 = Document(kb_id=kb.id, name="d2.md", file_type="md", file_size=10, status=7)
+    d1 = Document(kb_id=kb.id, name="d1.md", file_type="md", file_size=10, status=6, enterprise_id=1)
+    d2 = Document(kb_id=kb.id, name="d2.md", file_type="md", file_size=10, status=7, enterprise_id=1)
     session.add_all([d1, d2])
     session.flush()
 
@@ -34,8 +34,8 @@ def _seed_dashboard_data(client):
         Chunk(document_id=d2.id, kb_id=kb.id, chunk_index=0, content="c3", token_count=1, vectorized=False),
     ])
 
-    app1 = App(name="app-dense", kb_ids=[kb.id], api_key="k1", retrieval_mode="dense")
-    app2 = App(name="app-hybrid", kb_ids=[kb.id], api_key="k2", retrieval_mode="hybrid")
+    app1 = App(name="app-dense", kb_ids=[kb.id], api_key="k1", retrieval_mode="dense", enterprise_id=1)
+    app2 = App(name="app-hybrid", kb_ids=[kb.id], api_key="k2", retrieval_mode="hybrid", enterprise_id=1)
     session.add_all([app1, app2])
     session.flush()
 
@@ -47,6 +47,7 @@ def _seed_dashboard_data(client):
     ]):
         rec = QaRecord(
             app_id=app1.id,
+            enterprise_id=1,
             user_key="u",
             question=q,
             answer="答",
@@ -145,11 +146,11 @@ def test_dashboard_kpi_trend_mom(client):
 
     # 前 7 天窗口造 2 条问答，近 7 天窗口造 4 条 → 环比 +100%
     for i in range(2):
-        rec = QaRecord(app_id=1, user_key="u", question=f"prev{i}", answer="a", grounded=True)
+        rec = QaRecord(app_id=1, enterprise_id=1, user_key="u", question=f"prev{i}", answer="a", grounded=True)
         rec.created_at = now - timedelta(days=8 + i)  # 落在前 7 天窗口
         session.add(rec)
     for i in range(4):
-        rec = QaRecord(app_id=1, user_key="u", question=f"cur{i}", answer="a", grounded=True)
+        rec = QaRecord(app_id=1, enterprise_id=1, user_key="u", question=f"cur{i}", answer="a", grounded=True)
         rec.created_at = now - timedelta(days=i)  # 落在近 7 天窗口
         session.add(rec)
     session.commit()

@@ -18,6 +18,10 @@
           <span class="meta-label">创建时间</span>
           <span class="meta-value">{{ formatTime(meInfo?.created_at) }}</span>
         </div>
+        <div class="meta-item">
+          <span class="meta-label">当前版本</span>
+          <span class="meta-value">v{{ appVersion }}</span>
+        </div>
       </div>
     </div>
 
@@ -75,6 +79,9 @@
   import { useUserStore } from '@/store/modules/user'
 
   defineOptions({ name: 'UserCenter' })
+
+  /** 产品版本号（vite define 注入；模板直用全局常量过不了 vue-tsc） */
+  const appVersion = __APP_VERSION__
 
   const userStore = useUserStore()
   const router = useRouter()

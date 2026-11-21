@@ -1,4 +1,5 @@
 import { useUserStore } from '@/store/modules/user'
+import request from '@/utils/http'
 
 /**
  * EverKB 智能助手 API（对齐后端 /api/v1/admin/assistant，机器人抽屉真问答）
@@ -12,10 +13,28 @@ import { useUserStore } from '@/store/modules/user'
  * - 每帧 `data: {json}\n\n`；事件 { delta } 增量 + 收尾 { grounded, citations }。
  */
 
-/** SSE 收尾帧 */
+/** SSE 收尾帧（cost = 本次问答按 token 结算的花费，元） */
 export interface AssistantChatDone {
   grounded: boolean
   citations: Api.EverKB.Citation[]
+  cost?: number
+}
+
+/** 体验者自己的问答历史（后端按 user_key 隔离） */
+export interface MyQaRecord {
+  id: number
+  question: string
+  answer: string
+  grounded: boolean
+  total_cost: number | null
+  created_at: string
+}
+
+export function fetchMyRecords(limit = 20) {
+  return request.get<{ items: MyQaRecord[]; total: number }>({
+    url: '/api/v1/admin/assistant/records',
+    params: { limit }
+  })
 }
 
 /** 流式回调 */
@@ -26,8 +45,15 @@ export interface AssistantStreamHandlers {
 }
 
 /** 从原始 chunk 文本解析完整 SSE data 帧（跨 chunk 缓冲由调用方维护） */
+type SseEvent = {
+  delta?: string
+  grounded?: boolean
+  citations?: Api.EverKB.Citation[]
+  cost?: number
+}
+
 function parseSseBuffer(buffer: string): {
-  events: Array<{ delta?: string; grounded?: boolean; citations?: Api.EverKB.Citation[] }>
+  events: SseEvent[]
   remainder: string
 } {
   const events: Array<{ delta?: string; grounded?: boolean; citations?: Api.EverKB.Citation[] }> =
@@ -103,12 +129,14 @@ export function streamAssistantChat(
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
 
-    const dispatch = (
-      events: Array<{ delta?: string; grounded?: boolean; citations?: Api.EverKB.Citation[] }>
-    ) => {
+    const dispatch = (events: SseEvent[]) => {
       for (const evt of events) {
         if (evt.grounded !== undefined && evt.citations) {
-          handlers.onDone({ grounded: evt.grounded, citations: evt.citations })
+          handlers.onDone({
+            grounded: evt.grounded,
+            citations: evt.citations,
+            cost: evt.cost
+          })
         } else if (evt.delta !== undefined) {
           handlers.onDelta(evt.delta)
         }

@@ -1,6 +1,6 @@
 """Pydantic 请求/响应模型（Plan 1 Task 3 起；admin/open 两侧共用本模块）。"""
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -49,8 +49,16 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+class RegisterRequest(BaseModel):
+    """POST /auth/register 请求体：凭邀请码注册体验账号（不开放自由注册）。"""
+
+    username: Annotated[str, StringConstraints(min_length=3, max_length=64)]
+    password: Annotated[str, StringConstraints(min_length=8, max_length=128)]
+    invite_code: Annotated[str, StringConstraints(min_length=4, max_length=32)]
+
+
 class AdminUserOut(BaseModel):
-    """GET /auth/me 响应体（密码哈希等敏感列绝不外发）。"""
+    """GET /auth/me 响应体（密码哈希等敏感列绝不外发；带角色与企业供前端分流）。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,6 +66,112 @@ class AdminUserOut(BaseModel):
     username: str
     is_active: bool
     created_at: datetime
+    role: str = "ent_admin"
+    enterprise_id: Optional[int] = None
+
+
+class WalletOut(BaseModel):
+    """GET /admin/wallet 响应体：企业钱包余额（全员共享，设计方案 §6）。"""
+
+    enterprise_id: int
+    budget_cny: float = 0.0
+    spent_cny: float = 0.0
+    reserved_cny: float = 0.0
+    remaining_cny: float = 0.0
+
+
+# ── 平台运营（M5：/api/v1/platform/*）───────────────────────────────
+
+
+class EnterpriseOut(BaseModel):
+    """企业列表/详情响应体（对齐 models.Enterprise 列；钱包余额另走 /wallet）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    status: int
+    trial_ends_at: Optional[datetime] = None
+    service_ends_at: Optional[datetime] = None
+    frozen_at: Optional[datetime] = None
+    freeze_reason: str = ""
+    data_purge_at: Optional[datetime] = None
+    contact_name: str = ""
+    contact_way: str = ""
+    note: str = ""
+    created_at: datetime
+
+
+class EnterpriseCreate(BaseModel):
+    """POST /platform/enterprises 请求体：开通企业（试用）。"""
+
+    name: str = Field(min_length=1, max_length=128)
+    trial_days: int = Field(default=7, ge=0, description="试用天数；0=不过期")
+    budget_cny: float = Field(default=20.0, ge=0, description="试用额度（元）")
+    contact_name: str = Field(default="", max_length=64)
+    contact_way: str = Field(default="", max_length=128)
+    note: str = Field(default="", max_length=512)
+
+
+class EnterpriseActivate(BaseModel):
+    """POST /platform/enterprises/{id}/activate 请求体：转正。"""
+
+    service_days: int = Field(default=365, ge=0, description="服务天数；0=不过期")
+
+
+class EnterpriseFreeze(BaseModel):
+    """POST /platform/enterprises/{id}/freeze 请求体：冻结。"""
+
+    reason: str = Field(default="", max_length=128)
+
+
+class EnterpriseTopup(BaseModel):
+    """POST /platform/enterprises/{id}/topup 请求体：充值。"""
+
+    amount: float = Field(gt=0, description="充值金额（元），累加到预算")
+
+
+class InviteCodeCreate(BaseModel):
+    """POST /platform/enterprises/{id}/invites 请求体：发企业管理员注册码。"""
+
+    max_uses: int = Field(default=1, ge=1, le=100, description="最多可注册企业管理员数")
+    note: str = Field(default="", max_length=128, description="备注（发给谁）")
+
+
+class InviteCodeOut(BaseModel):
+    """企业管理员注册码响应体（含明文码，仅平台运营可见）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    enterprise_id: Optional[int] = None
+    max_uses: int
+    used_count: int
+    expires_at: Optional[datetime] = None
+    enabled: bool
+    note: str = ""
+    created_at: datetime
+
+
+class TrialRecordOut(BaseModel):
+    """体验账号的一条问答记录。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    question: str
+    answer: str
+    grounded: bool
+    total_cost: Optional[float] = None
+    created_at: datetime
+
+
+class TrialRecordListOut(BaseModel):
+    """GET /assistant/records 响应体：用对象包装，避免 list 快路径绕过统一信封。"""
+
+    items: list[TrialRecordOut]
+    total: int
 
 
 class PasswordChangeRequest(BaseModel):

@@ -1,9 +1,12 @@
-"""应用管理 API（Task 18，挂载于 /api/v1/admin/apps）。
+"""应用管理 API（挂载于 /api/v1/admin/apps）。
 
 app 是产品侧问答入口（挂知识库 + 检索参数 + 模型配置），X-API-Key 鉴权落点：
 - 创建时服务端生成 api_key（sk- 前缀），仅此一次明文返回（AppCreateOut）；
 - 其余读取（列表/详情）api_key 与 model_params.api_key 一律脱敏为 sk-***；
 - reset-key 重置并返回新明文，旧 key 即刻失效（库中已替换）。
+
+多租户（M1/M5）：所有端点 require_enterprise + scoped/ensure_owned，按 enterprise_id
+隔离（跨企业访问 404，不泄露存在性）。
 """
 from copy import deepcopy
 
@@ -12,9 +15,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.authz import ensure_owned, require_enterprise, scoped
 from app.api.envelope import EnvelopeRoute
 from app.core.db import get_db
-from app.models import App
+from app.models import AdminUser, App
 from app.schemas import AppCreate, AppCreateOut, AppKeyOut, AppOut, AppPatch
 
 router = APIRouter(prefix="/apps", tags=["应用管理"], route_class=EnvelopeRoute)
@@ -54,15 +58,16 @@ def _commit_or_409(db: Session, detail: str = "应用名已存在") -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=detail) from None
 
 
-def _get_or_404(db: Session, app_id: int) -> App:
+def _get_owned_or_404(db: Session, app_id: int, ent_id: int) -> App:
     app = db.get(App, app_id)
-    if app is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="应用不存在")
+    ensure_owned(db, app, ent_id)
     return app
 
 
-def _name_taken(db: Session, name: str, *, exclude_id: int | None = None) -> bool:
-    stmt = select(func.count()).select_from(App).where(App.name == name)
+def _name_taken(db: Session, ent_id: int, name: str, *, exclude_id: int | None = None) -> bool:
+    stmt = select(func.count()).select_from(App).where(
+        App.enterprise_id == ent_id, App.name == name
+    )
     if exclude_id is not None:
         stmt = stmt.where(App.id != exclude_id)
     return bool(db.scalar(stmt))
@@ -87,9 +92,13 @@ def _to_out(app: App) -> AppOut:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=AppCreateOut)
-def create_app(payload: AppCreate, db: Session = Depends(get_db)) -> App:
-    """创建应用（生成 api_key，唯一一次明文返回；重名 409）。"""
-    if _name_taken(db, payload.name):
+def create_app(
+    payload: AppCreate,
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+) -> App:
+    """创建应用（生成 api_key，唯一一次明文返回；企业内重名 409）。"""
+    if _name_taken(db, user.enterprise_id, payload.name):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="应用名已存在")
     app = App(
         name=payload.name,
@@ -101,6 +110,7 @@ def create_app(payload: AppCreate, db: Session = Depends(get_db)) -> App:
         score_threshold=payload.score_threshold,
         prompt_template=payload.prompt_template,
         model_params=payload.model_params,
+        enterprise_id=user.enterprise_id,
     )
     db.add(app)
     _commit_or_409(db)
@@ -109,24 +119,38 @@ def create_app(payload: AppCreate, db: Session = Depends(get_db)) -> App:
 
 
 @router.get("", response_model=list[AppOut])
-def list_apps(db: Session = Depends(get_db)) -> list[AppOut]:
-    """应用列表（按 id 升序；api_key 脱敏）。"""
-    apps = db.scalars(select(App).order_by(App.id)).all()
+def list_apps(
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+) -> list[AppOut]:
+    """应用列表（仅当前企业，按 id 升序；api_key 脱敏）。"""
+    apps = db.scalars(scoped(db, App, user.enterprise_id).order_by(App.id)).all()
     return [_to_out(a) for a in apps]
 
 
 @router.get("/{app_id}", response_model=AppOut)
-def get_app(app_id: int, db: Session = Depends(get_db)) -> AppOut:
+def get_app(
+    app_id: int,
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+) -> AppOut:
     """应用详情（api_key 与 model_params.api_key 脱敏）。"""
-    return _to_out(_get_or_404(db, app_id))
+    return _to_out(_get_owned_or_404(db, app_id, user.enterprise_id))
 
 
 @router.patch("/{app_id}", response_model=AppOut)
-def patch_app(app_id: int, payload: AppPatch, db: Session = Depends(get_db)) -> AppOut:
+def patch_app(
+    app_id: int,
+    payload: AppPatch,
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+) -> AppOut:
     """局部更新（name/kb_ids/top_k/score_threshold/prompt_template/model_params/enabled）。"""
-    app = _get_or_404(db, app_id)
+    app = _get_owned_or_404(db, app_id, user.enterprise_id)
     data = payload.model_dump(exclude_unset=True, exclude_none=True)
-    if "name" in data and data["name"] != app.name and _name_taken(db, data["name"], exclude_id=app_id):
+    if "name" in data and data["name"] != app.name and _name_taken(
+        db, user.enterprise_id, data["name"], exclude_id=app_id
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="应用名已存在")
     for field, value in data.items():
         setattr(app, field, value)
@@ -136,9 +160,13 @@ def patch_app(app_id: int, payload: AppPatch, db: Session = Depends(get_db)) -> 
 
 
 @router.post("/{app_id}/reset-key", response_model=AppKeyOut)
-def reset_key(app_id: int, db: Session = Depends(get_db)) -> AppKeyOut:
+def reset_key(
+    app_id: int,
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+) -> AppKeyOut:
     """重置 api_key，返回新明文；旧 key 即刻失效（库中已替换）。"""
-    app = _get_or_404(db, app_id)
+    app = _get_owned_or_404(db, app_id, user.enterprise_id)
     app.api_key = _generate_api_key()
     _commit_or_409(db, detail="密钥重置失败")
     db.refresh(app)
@@ -146,8 +174,12 @@ def reset_key(app_id: int, db: Session = Depends(get_db)) -> AppKeyOut:
 
 
 @router.delete("/{app_id}")
-def delete_app(app_id: int, db: Session = Depends(get_db)) -> None:
+def delete_app(
+    app_id: int,
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+) -> None:
     """删除应用。"""
-    app = _get_or_404(db, app_id)
+    app = _get_owned_or_404(db, app_id, user.enterprise_id)
     db.delete(app)
     db.commit()

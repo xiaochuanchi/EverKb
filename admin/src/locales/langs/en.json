@@ -278,7 +278,12 @@
       "trace": "Trace Viewer",
       "traceDetail": "Trace Detail",
       "reconcile": "Reconciliation",
-      "eval": "Retrieval Eval"
+      "eval": "Retrieval Eval",
+      "wallet": "Wallet"
+    },
+    "platform": {
+      "title": "Operations",
+      "enterprise": "Enterprises"
     }
   },
   "table": {
@@ -348,6 +353,14 @@
       "docStatusUnknown": "Status {n}",
       "alertFailedDocs": "Failed Docs",
       "alertDriftDocs": "Vector Drift"
+    },
+    "wallet": {
+      "balanceTitle": "Wallet Balance",
+      "remaining": "Available",
+      "budget": "Budget",
+      "spent": "Settled",
+      "reserved": "Reserved",
+      "refresh": "Refresh"
     },
     "placeholder": {
       "underConstruction": "Page Under Construction, to Be Implemented in Batch 1 / Batch 2 per the Rollout Plan"
@@ -678,7 +691,7 @@
       "columnIssueType": "Issue Type"
     },
     "assistant": {
-      "title": "Art Bot",
+      "title": "EverKb Bot",
       "online": "Online",
       "offline": "Offline",
       "simulateApp": "Simulate App",
@@ -696,5 +709,37 @@
       "viewSource": "View source",
       "ungrounded": "Not grounded in the knowledge base"
     }
+  },
+  "platform": {
+    "enterprise": {
+      "listTitle": "Enterprises",
+      "create": "Create",
+      "name": "Name",
+      "namePlaceholder": "Enterprise name",
+      "trialDays": "Trial days",
+      "budget": "Initial budget (¥)",
+    "topup": "Top up",
+    "enterprise": "Enterprise",
+    "amount": "Amount (¥)",
+    "invites": "Invite codes",
+    "inviteListTitle": "Invite Codes",
+    "createInvite": "Generate code",
+    "inviteCode": "Invite code",
+    "maxUses": "Max uses",
+    "used": "Used",
+    "status": "Status",
+    "enabled": "Active",
+    "disabled": "Disabled",
+    "note": "Note",
+    "notePlaceholder": "Note (e.g. for John)",
+    "createdAt": "Created at",
+    "newInviteCode": "New invite code",
+    "copy": "Copy",
+    "copied": "Copied",
+    "inviteHint": "Send the code to the enterprise admin. They self-register with their own username/password and become the enterprise admin (ENT_ADMIN) of this enterprise.",
+    "disable": "Disable",
+    "confirmDisable": "Disable this invite code? It will no longer work for registration (existing accounts are unaffected).",
+    "accountNotShown": "Note: account passwords are set by the registrant and are never stored in plaintext, so they cannot be viewed here."
   }
+}
 }

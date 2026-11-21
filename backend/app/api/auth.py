@@ -7,10 +7,19 @@
    前端 art-design-pro 登录页/路由守卫/401 拦截直接对接；
 3. 密码哈希 pbkdf2 格式串（core/security.py）。
 
+2026-11-20 商业化多租户（M1）改造：
+- require_admin 收敛为「身份认证」：Bearer → 验签 → 查库 → is_active，不再
+  做角色白名单（授权交给 api/authz.py 的 require_platform / require_ent_admin /
+  require_enterprise，fail-closed 分层）；
+- register 语义从「trial 体验账号」升级为「企业管理员注册码」——凭平台发的
+  企业管理员注册码注册为 ENT_ADMIN，落到绑定企业的控制台（设计方案 §8）。
+
 已知取舍：Redis（I5）未落地前无黑名单——改密后旧 token 仍有效至过期；
 require_admin 每请求查库 is_active，禁用账号即时生效。登录失败限次随
 Redis 接入补（技术决策记录 §3 接入点 A）。
 """
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer
 import jwt
@@ -20,8 +29,14 @@ from sqlalchemy.orm import Session
 from app.api.envelope import EnvelopeRoute
 from app.core.db import get_db
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
-from app.models import AdminUser
-from app.schemas import AdminUserOut, LoginRequest, PasswordChangeRequest, TokenOut
+from app.models import AdminUser, InviteCode, UserRole
+from app.schemas import (
+    AdminUserOut,
+    LoginRequest,
+    PasswordChangeRequest,
+    RegisterRequest,
+    TokenOut,
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)  # 缺头/格式错返回 None，401 细节由 require_admin 统一给
 
@@ -40,10 +55,14 @@ def require_admin(
     credentials=Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> AdminUser:
-    """admin 路由整包鉴权依赖：Bearer → 验签 → 查库 → is_active。
+    """admin 路由整包身份认证依赖：Bearer → 验签 → 查库 → is_active。
 
     每请求回表而非纯无状态：token 只证明"曾经登录过"，账号删除/禁用要
     即时生效。失败一律 401 同款措辞，不泄露具体原因。
+
+    M1 起本依赖只回答「你是谁」（身份），不再做「你能做什么」（授权）——
+    角色授权由 api/authz.py 的 require_platform / require_ent_admin /
+    require_enterprise 分层收紧（fail-closed）。
     """
     if credentials is None:
         raise _unauthorized()
@@ -59,6 +78,35 @@ def require_admin(
     return user
 
 
+@router.post("/register", response_model=TokenOut)
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)) -> TokenOut:
+    """凭企业管理员注册码注册为 ENT_ADMIN 并直接登录；注册码不可复用超出 max_uses。"""
+    invite = db.scalar(select(InviteCode).where(InviteCode.code == payload.invite_code))
+    if invite is None or not invite.enabled:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="邀请码无效")
+    now = datetime.now(timezone.utc) if invite.expires_at and invite.expires_at.tzinfo else datetime.now()
+    if invite.expires_at is not None and invite.expires_at <= now:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="邀请码已过期")
+    if invite.used_count >= invite.max_uses:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="邀请码已被使用完")
+
+    exists = db.scalar(select(AdminUser.id).where(AdminUser.username == payload.username))
+    if exists is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="用户名已存在")
+
+    user = AdminUser(
+        username=payload.username,
+        password_hash=hash_password(payload.password),
+        role=UserRole.ENT_ADMIN,
+        enterprise_id=invite.enterprise_id,
+    )
+    invite.used_count += 1
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return TokenOut(access_token=create_access_token(user.id, request.app.state.settings))
+
+
 @router.post("/login", response_model=TokenOut)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenOut:
     """账密登录 → JWT。用户不存在/密码错误共用同一措辞，防账号枚举。"""
@@ -72,9 +120,9 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 
 @router.get("/me", response_model=AdminUserOut)
-def me(user: AdminUser = Depends(require_admin)) -> AdminUser:
-    """当前登录账号信息（前端登录后展示用户名用）。"""
-    return user
+def me(user: AdminUser = Depends(require_admin)) -> AdminUserOut:
+    """当前登录账号信息：前端据此决定角色菜单。"""
+    return AdminUserOut.model_validate(user)
 
 
 @router.put("/password", status_code=status.HTTP_200_OK)

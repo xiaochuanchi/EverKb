@@ -30,10 +30,16 @@ class ChatResult:
 
 @dataclass
 class StreamChunk:
-    """流式 chat 的一个增量片段。"""
+    """流式 chat 的一个增量片段。
+
+    tokens_in/tokens_out 只在 finish=True 的末帧有值（厂商通常在末帧回 usage）；
+    客户端拿不到 usage 时保持 0，调用方需自行兜底估算成本。
+    """
 
     delta: str
     finish: bool = False  # 最后一个片段（`[DONE]` 或 stream 结束）
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 class LLMClient(Protocol):

@@ -1,4 +1,4 @@
-/** 后端统一信封形状（契约：docs/2026-11-17-api统一信封-设计文档.md）。 */
+/** 后端统一信封形状（契约实现：backend/app/api/envelope.py，code=0 成功，失败 code=HTTP 状态码）。 */
 export interface ApiEnvelope<T = unknown> {
   code: number;
   message: string;

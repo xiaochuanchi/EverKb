@@ -1,4 +1,4 @@
-"""SQLAlchemy 表定义（一期全部 7 张表）。
+"""SQLAlchemy 表定义（一期 8 张表 + 商业化多租户 3 张新表）。
 
 蓝图见《设计文档 2026-11-14》§5.1，与设计文档的差异均为数据表讨论的
 决策（冲突时以本文档与技术决策记录 §7 为准）：
@@ -155,23 +155,200 @@ class SpanType:
 # ── 管理域 ──────────────────────────────────────────────────────
 
 
+class UserRole:
+    """账号角色（商业化多租户 v1 固定三角色，设计方案 §3）。
+
+    PLATFORM 平台管理员 / ENT_ADMIN 企业管理员 / MEMBER 企业成员（本期只预留位，
+    账号开通能力后移）。存量 super 迁移为 PLATFORM（见迁移脚本）。
+    """
+
+    PLATFORM = "platform"
+    ENT_ADMIN = "ent_admin"
+    MEMBER = "member"
+
+
+class EnterpriseStatus:
+    """企业生命周期状态机（设计方案 §7）。
+
+    1 试用中 → 3 只读冻结；2 正式 → 3 只读冻结；3 → 4 已清理（数据清理，企业行保留）。
+    """
+
+    TRIAL = 1  # 试用中
+    ACTIVE = 2  # 正式
+    FROZEN = 3  # 只读冻结
+    PURGED = 4  # 已清理
+
+
+class WalletTxnType:
+    """钱包流水类型（设计方案 §4.1）：1 充值 / 2 消费 / 3 人工调整 / 4 冲正。"""
+
+    TOPUP = 1
+    CONSUME = 2
+    ADJUST = 3
+    REVERSE = 4
+
+
 class AdminUser(Base):
-    """管理后台账号（Task 14 鉴权：pbkdf2 哈希 + JWT，实现见 core/security.py 与 api/auth.py）。"""
+    """平台与企业统一账号表（Task 14 鉴权：pbkdf2 哈希 + JWT）。
+
+    2026-11-20 商业化多租户改造：保留表名（避免无谓 churn），语义由「管理后台
+    账号」升级为「平台与企业统一账号」。role 改 UserRole 三值；trial 时期的
+    budget/spent/reserved/expires_at/allowed_app_id/invite_code 六列删除（钱包
+    职责移交 enterprise_wallet，见 M2）。
+    """
 
     __tablename__ = "admin_user"
-    __table_args__ = {"comment": "管理后台账号（自建账密 + JWT 鉴权；首账号用 scripts/seed_admin.py 创建）"}
+    __table_args__ = (
+        Index("ix_admin_user_enterprise", "enterprise_id"),
+        {"comment": "平台与企业统一账号（platform=平台管理员 / ent_admin=企业管理员 / member=企业成员）"},
+    )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
-    username: Mapped[str] = mapped_column(String(64), unique=True, comment="登录名，唯一")
+    username: Mapped[str] = mapped_column(String(64), unique=True, comment="登录名，全局唯一")
     password_hash: Mapped[str] = mapped_column(
         String(256), comment="密码哈希（pbkdf2 算法格式串，Task 14 定）"
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="False = 禁止登录")
+    role: Mapped[str] = mapped_column(
+        String(16),
+        default=UserRole.ENT_ADMIN,
+        server_default=text("'ent_admin'"),  # 老库 ALTER ADD COLUMN 时历史行自动填 ent_admin
+        comment="角色：platform=平台管理员 / ent_admin=企业管理员 / member=企业成员",
+    )
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=平台账号）；一人一企业（设计方案 §4.3）"
+    )
     created_at: Mapped[datetime] = mapped_column(
         CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
     updated_at: Mapped[datetime] = mapped_column(
         UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
+    )
+
+
+class Enterprise(Base):
+    """企业 / 租户（设计方案 §4.1）。
+
+    试用即产品：企业开通试用得到完整商业产品 + 额度帽。状态机见 EnterpriseStatus。
+    一人一企业（admin_user.enterprise_id 单值），无 membership 表。
+    """
+
+    __tablename__ = "enterprise"
+    __table_args__ = {"comment": "企业/租户（状态机：1 试用中 / 2 正式 / 3 只读冻结 / 4 已清理）"}
+
+    id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    name: Mapped[str] = mapped_column(String(128), comment="企业名")
+    status: Mapped[int] = mapped_column(
+        SmallInteger, default=EnterpriseStatus.TRIAL, comment="1 试用中 / 2 正式 / 3 只读冻结 / 4 已清理"
+    )
+    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(
+        CREATED_AT, comment="试用截止时刻（status=1 有效）"
+    )
+    service_ends_at: Mapped[Optional[datetime]] = mapped_column(
+        CREATED_AT, comment="服务截止时刻（status=2 有效；到期转冻结）"
+    )
+    frozen_at: Mapped[Optional[datetime]] = mapped_column(CREATED_AT, comment="冻结时刻")
+    freeze_reason: Mapped[str] = mapped_column(
+        String(128), default="", comment="冻结原因（试用到期 / 欠费 / 人工）"
+    )
+    data_purge_at: Mapped[Optional[datetime]] = mapped_column(
+        CREATED_AT, comment="冻结起算 60 天后的数据清理日（worker 扫描用）"
+    )
+    contact_name: Mapped[str] = mapped_column(String(64), default="", comment="联系人姓名（运营用）")
+    contact_way: Mapped[str] = mapped_column(String(128), default="", comment="联系方式（运营用）")
+    note: Mapped[str] = mapped_column(String(512), default="", comment="备注")
+    created_at: Mapped[datetime] = mapped_column(
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
+    )
+
+
+class EnterpriseWallet(Base):
+    """企业钱包（设计方案 §4.1，独立表而非挂在 enterprise 上）。
+
+    独立表的理由：reserve/settle 的原子 UPDATE 打在钱包行上，行锁不与企业业务
+    字段更新竞争；钱包域（钱包 + 流水）自成一体，对账/审计只碰这两张表。
+    数学与旧版 quota.py 完全一致，只是钱包行从 admin_user 挪到本表（M2 平移）。
+    """
+
+    __tablename__ = "enterprise_wallet"
+    __table_args__ = (
+        Index("ix_enterprise_wallet_ent", "enterprise_id", unique=True),
+        {"comment": "企业钱包（一对一；budget=预算 / spent=已结算 / reserved=在途预留，元）"},
+    )
+
+    id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[int] = mapped_column(
+        BigInteger, comment="所属企业 id（一对一，唯一索引 ix_enterprise_wallet_ent）"
+    )
+    budget_cny: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal("0"), comment="预算额度（元）")
+    spent_cny: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal("0"), comment="已结算花费（元）")
+    reserved_cny: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), default=Decimal("0"), comment="在途预留（元），防并发问答超额"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UPDATED_AT, server_default=text("CURRENT_TIMESTAMP"), onupdate=func.now(), comment="修改时间"
+    )
+
+
+class WalletTransaction(Base):
+    """钱包流水（设计方案 §4.1）。
+
+    只记结算事件（settle / 充值 / 调整 / 冲正），在途预留不落流水——预留是内存态
+    会计，结算是事实。amount 带符号，remaining_after 为记账后剩余额度快照。
+    """
+
+    __tablename__ = "wallet_transaction"
+    __table_args__ = (
+        Index("ix_wallet_txn_ent_created", "enterprise_id", "created_at"),
+        {"comment": "钱包流水（只记结算事件；amount 带符号，remaining_after 为记账后快照）"},
+    )
+
+    id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[int] = mapped_column(BigInteger, comment="所属企业 id")
+    type: Mapped[int] = mapped_column(
+        SmallInteger, comment="类型：1 充值 / 2 消费 / 3 人工调整 / 4 冲正"
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 6), comment="带符号金额（元）")
+    remaining_after: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 6), comment="记账后剩余额度快照（元）"
+    )
+    ref_type: Mapped[str] = mapped_column(String(32), default="", comment="关联业务对象类型（消费关联 qa_record）")
+    ref_id: Mapped[Optional[int]] = mapped_column(BigInteger, comment="关联业务对象 id（如 qa_record.id）")
+    operator: Mapped[str] = mapped_column(String(64), default="", comment="操作者（系统 / 平台管理员名）")
+    remark: Mapped[str] = mapped_column(String(256), default="", comment="备注")
+    created_at: Mapped[datetime] = mapped_column(
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
+    )
+
+
+class InviteCode(Base):
+    """企业管理员注册码（设计方案 §4.2 改造：v1 单级）。
+
+    仅平台发的企业管理员注册码（绑定 enterprise_id、一次性、限 max_uses）。
+    企业内成员邀请码（两级结构 + target_role）随成员账号体系后移。
+    """
+
+    __tablename__ = "invite_code"
+    __table_args__ = {"comment": "企业管理员注册码（平台发码；绑定企业，一次性，限使用次数）"}
+
+    id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    code: Mapped[str] = mapped_column(String(32), unique=True, comment="注册码，唯一")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="绑定的企业 id；NULL=未绑定（待关联）"
+    )
+    max_uses: Mapped[int] = mapped_column(Integer, default=1, comment="最多可注册账号数")
+    used_count: Mapped[int] = mapped_column(Integer, default=0, comment="已注册账号数")
+    expires_at: Mapped[Optional[datetime]] = mapped_column(CREATED_AT, comment="注册码有效期；NULL=长期有效")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="False=停用")
+    note: Mapped[str] = mapped_column(String(128), default="", comment="备注（发给谁）")
+    created_at: Mapped[datetime] = mapped_column(
+        CREATED_AT, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
 
 
@@ -182,9 +359,15 @@ class KnowledgeBase(Base):
     """知识库。"""
 
     __tablename__ = "knowledge_base"
-    __table_args__ = {"comment": "知识库（status=0 停用 = 整库不参与检索；仅空库可删）"}
+    __table_args__ = (
+        Index("ix_kb_enterprise", "enterprise_id"),
+        {"comment": "知识库（status=0 停用 = 整库不参与检索；仅空库可删；归企业隔离）"},
+    )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=默认企业/平台遗留数据，租户隔离入口）"
+    )
     name: Mapped[str] = mapped_column(String(128), unique=True, comment="库名，唯一")
     description: Mapped[str] = mapped_column(String(512), default="", comment="描述")
     status: Mapped[int] = mapped_column(
@@ -206,10 +389,14 @@ class Document(Base):
         # 知识库详情页按库筛文档；worker 轮询 status∈(1, 3-编辑续跑, 7-重试) 领任务
         Index("ix_document_kb_status", "kb_id", "status"),
         Index("ix_document_status", "status"),
-        {"comment": "文档（状态机驱动：1 已上传→…→6 已完成；7 失败可重试）"},
+        Index("ix_document_enterprise", "enterprise_id"),
+        {"comment": "文档（状态机驱动：1 已上传→…→6 已完成；7 失败可重试；归企业隔离）"},
     )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=默认企业/平台遗留数据，租户隔离入口）"
+    )
     kb_id: Mapped[int] = mapped_column(
         BigInteger, comment="所属知识库 id（无物理外键，索引 ix_document_kb_status）"
     )
@@ -284,9 +471,15 @@ class App(Base):
     """产品侧机器人/场景：挂载知识库 + 问答参数 + 运行时模型配置。"""
 
     __tablename__ = "app"
-    __table_args__ = {"comment": "应用/机器人（问答入口：挂载知识库 + 检索参数 + 模型配置，X-API-Key 鉴权）"}
+    __table_args__ = (
+        Index("ix_app_enterprise", "enterprise_id"),
+        {"comment": "应用/机器人（问答入口：挂载知识库 + 检索参数 + 模型配置，X-API-Key 鉴权；归企业隔离）"},
+    )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=默认企业/平台遗留数据；open 侧计费扣其钱包）"
+    )
     name: Mapped[str] = mapped_column(String(128), unique=True, comment="应用名，唯一")
     kb_ids: Mapped[list] = mapped_column(
         JSON, default=list, comment="挂载的知识库 id 列表（JSON，设计文档 §4 决策：不建关联表）"
@@ -323,10 +516,14 @@ class QaRecord(Base):
     __tablename__ = "qa_record"
     __table_args__ = (
         Index("ix_qa_record_app_created", "app_id", "created_at"),
-        {"comment": "问答记录（兼作 Trace 主表：trace_span.trace_id = 本表 id；追加不可变，反馈字段除外）"},
+        Index("ix_qa_record_enterprise", "enterprise_id"),
+        {"comment": "问答记录（兼作 Trace 主表：trace_span.trace_id = 本表 id；追加不可变，反馈字段除外；归企业隔离）"},
     )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，兼作 Trace id")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=默认企业/平台遗留数据，租户隔离入口）"
+    )
     app_id: Mapped[int] = mapped_column(BigInteger, comment="所属应用 id（无物理外键，索引 ix_qa_record_app_created）")
     is_admin: Mapped[bool] = mapped_column(
         Boolean, default=False, comment="True = 管理员在后台抽屉模拟问答（区别于真实用户，供统计/追溯隔离）"
@@ -374,10 +571,14 @@ class TraceSpan(Base):
     __tablename__ = "trace_span"
     __table_args__ = (
         Index("ix_trace_span_trace", "trace_id"),
-        {"comment": "链路步骤 Span（parent_span_id 自引用成树；命名对齐 OpenTelemetry GenAI 语义规范）"},
+        Index("ix_trace_span_enterprise", "enterprise_id"),
+        {"comment": "链路步骤 Span（parent_span_id 自引用成树；命名对齐 OpenTelemetry GenAI 语义规范；归企业隔离）"},
     )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=默认企业/平台遗留数据，租户隔离入口）"
+    )
     trace_id: Mapped[int] = mapped_column(BigInteger, comment="所属 Trace id（= qa_record.id）")
     parent_span_id: Mapped[Optional[int]] = mapped_column(BigInteger, comment="父 span id；NULL = 根，自引用成树")
     name: Mapped[str] = mapped_column(String(128), comment="span 名（如 gen_ai.embedding / milvus.search）")
@@ -403,6 +604,7 @@ class NotificationType:
 
     DOC_COMPLETED = "doc_completed"  # 文档处理完成
     DOC_FAILED = "doc_failed"        # 文档处理失败
+    ENTERPRISE_EXPIRING = "enterprise_expiring"  # 企业服务到期提醒（M3 生命周期）
 
 
 class Notification(Base):
@@ -416,10 +618,14 @@ class Notification(Base):
     __table_args__ = (
         Index("ix_notification_is_read", "is_read"),
         Index("ix_notification_created", "created_at"),
-        {"comment": "系统通知（admin 通知中心；文档处理完成/失败落通知，可标记已读）"},
+        Index("ix_notification_enterprise", "enterprise_id"),
+        {"comment": "系统通知（admin 通知中心；文档处理完成/失败落通知，可标记已读；归企业隔离）"},
     )
 
     id: Mapped[int] = mapped_column(ID_PK, primary_key=True, comment="主键，自增")
+    enterprise_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, comment="所属企业 id（NULL=平台级通知，租户隔离入口）"
+    )
     type: Mapped[str] = mapped_column(
         String(32), comment="类型：doc_completed 文档处理完成 / doc_failed 文档处理失败"
     )

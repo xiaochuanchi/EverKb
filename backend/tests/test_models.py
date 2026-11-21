@@ -1,10 +1,11 @@
-"""Task 2 验收：7 张表建表 + 全链路插入默认值 + 讨论决策的行为锁定。
+"""Task 2 验收：全表建表（含租户 3 新表）+ 全链路插入默认值 + 讨论决策的行为锁定。
 
 SQLite 内存库（红线 3：测试不出网）。真实 MySQL 建表验证走
 `docker exec everkb-mysql mysql ... SHOW TABLES`（infra plan I4）。
 """
 import pytest
 from datetime import datetime, timedelta
+from decimal import Decimal
 from sqlalchemy import inspect
 from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError
@@ -12,10 +13,28 @@ from sqlalchemy.schema import CreateTable
 
 from app import models
 from app.core.db import Base, init_db, make_engine, make_session_factory
-from app.models import AdminUser, App, Chunk, Document, KnowledgeBase, Notification, QaRecord, TraceSpan
+from app.models import (
+    AdminUser,
+    App,
+    Chunk,
+    Document,
+    Enterprise,
+    EnterpriseStatus,
+    EnterpriseWallet,
+    KnowledgeBase,
+    Notification,
+    QaRecord,
+    TraceSpan,
+    UserRole,
+    WalletTransaction,
+)
 
 ALL_TABLES = {
     "admin_user",
+    "invite_code",
+    "enterprise",
+    "enterprise_wallet",
+    "wallet_transaction",
     "knowledge_base",
     "app",
     "document",
@@ -35,7 +54,7 @@ def session():
         yield s
 
 
-def test_create_all_seven_tables(session):
+def test_create_all_tables(session):
     names = set(inspect(session.get_bind()).get_table_names())
     assert names == ALL_TABLES
 
@@ -122,6 +141,61 @@ def test_admin_user_username_unique(session):
     session.add(AdminUser(username="admin", password_hash="y"))
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+def test_admin_user_role_defaults_to_ent_admin(session):
+    """M1：admin_user.role 默认 ent_admin（企业管理员），平台账号显式设 platform。"""
+    user = AdminUser(username="ent1", password_hash="x")
+    session.add(user)
+    session.flush()
+    assert user.role == UserRole.ENT_ADMIN
+    assert user.enterprise_id is None  # 未绑定企业
+
+
+def test_enterprise_defaults_and_wallet(session):
+    """M1：企业默认试用中；钱包三额度默认 0。"""
+    ent = Enterprise(name="测试企业")
+    session.add(ent)
+    session.flush()
+    assert ent.status == EnterpriseStatus.TRIAL
+    assert ent.data_purge_at is None
+
+    wallet = EnterpriseWallet(enterprise_id=ent.id)
+    session.add(wallet)
+    session.flush()
+    assert wallet.budget_cny == 0
+    assert wallet.spent_cny == 0
+    assert wallet.reserved_cny == 0
+
+
+def test_enterprise_wallet_unique_per_enterprise(session):
+    """M1：企业钱包一对一（唯一索引），重复绑定即炸。"""
+    ent = Enterprise(name="企业A")
+    session.add(ent)
+    session.flush()
+    session.add(EnterpriseWallet(enterprise_id=ent.id))
+    session.commit()
+    session.add(EnterpriseWallet(enterprise_id=ent.id))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_wallet_transaction_insert(session):
+    """M1：钱包流水可落库（带符号金额 + 剩余快照）。"""
+    ent = Enterprise(name="企业B")
+    session.add(ent)
+    session.flush()
+    txn = WalletTransaction(
+        enterprise_id=ent.id,
+        type=1,
+        amount=Decimal("50.000000"),
+        remaining_after=Decimal("50.000000"),
+        ref_type="",
+        operator="平台",
+    )
+    session.add(txn)
+    session.commit()
+    assert txn.id is not None
 
 
 def test_app_api_key_unique(session):

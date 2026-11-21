@@ -1,20 +1,31 @@
 # EverKB CI
+# - version: 版本号一致性校验（仓库根 VERSION 单一源，scripts/sync_version.py --check）
 # - backend: pytest（测试不出网，无需 MySQL/Milvus/Redis 服务容器）
 # - admin / web: pnpm 安装 → lint → 构建（web 额外跑 vitest）
 # 三个作业全部无条件执行（路径过滤引入过 dorny/paths-filter 单点故障，收益不抵风险）
+# 仅推送 release/* 分支时执行（main push 与 pull_request 不再触发）
 
 name: CI
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches:
+      - 'release/*'
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  version:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: python3 scripts/sync_version.py --check
+
   backend:
     name: Backend (pytest)
     runs-on: ubuntu-latest

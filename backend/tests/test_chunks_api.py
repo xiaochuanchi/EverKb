@@ -17,7 +17,7 @@ def _make_doc_with_chunks(app, *, n=3, status=DocumentStatus.COMPLETED, chunk_co
     """
     vector = app.state.vector
     with app.state.session_factory() as session:
-        kb = KnowledgeBase(name="kb")
+        kb = KnowledgeBase(name="kb", enterprise_id=1)
         session.add(kb)
         session.flush()
         doc = Document(
@@ -27,6 +27,7 @@ def _make_doc_with_chunks(app, *, n=3, status=DocumentStatus.COMPLETED, chunk_co
             file_type="docx",
             status=status,
             chunk_count=chunk_count if chunk_count is not None else n,
+            enterprise_id=1,
         )
         session.add(doc)
         session.flush()

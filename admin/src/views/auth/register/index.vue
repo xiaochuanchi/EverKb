@@ -49,6 +49,15 @@
               />
             </ElFormItem>
 
+            <ElFormItem prop="inviteCode">
+              <ElInput
+                class="custom-height"
+                v-model.trim="formData.inviteCode"
+                placeholder="邀请码（向管理员索取，无邀请码无法注册）"
+                @keyup.enter="register"
+              />
+            </ElFormItem>
+
             <ElFormItem prop="agreement">
               <ElCheckbox v-model="formData.agreement">
                 {{ $t('register.agreeText') }}
@@ -87,7 +96,9 @@
 
 <script setup lang="ts">
   import { useI18n } from 'vue-i18n'
-  import type { FormInstance, FormRules } from 'element-plus'
+  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { fetchRegister } from '@/api/auth'
+  import { useUserStore } from '@/store/modules/user'
 
   defineOptions({ name: 'Register' })
 
@@ -95,13 +106,13 @@
     username: string
     password: string
     confirmPassword: string
+    inviteCode: string
     agreement: boolean
   }
 
   const USERNAME_MIN_LENGTH = 3
   const USERNAME_MAX_LENGTH = 20
-  const PASSWORD_MIN_LENGTH = 6
-  const REDIRECT_DELAY = 1000
+  const PASSWORD_MIN_LENGTH = 8
 
   const { t, locale } = useI18n()
   const router = useRouter()
@@ -119,6 +130,7 @@
     username: '',
     password: '',
     confirmPassword: '',
+    inviteCode: '',
     agreement: false
   })
 
@@ -188,6 +200,10 @@
       { min: PASSWORD_MIN_LENGTH, message: t('register.rule.passwordLength'), trigger: 'blur' }
     ],
     confirmPassword: [{ required: true, validator: validateConfirmPassword, trigger: 'blur' }],
+    inviteCode: [
+      { required: true, message: '请输入邀请码', trigger: 'blur' },
+      { min: 4, message: '邀请码至少 4 位', trigger: 'blur' }
+    ],
     agreement: [{ validator: validateAgreement, trigger: 'change' }]
   }))
 
@@ -202,36 +218,24 @@
       await formRef.value.validate()
       loading.value = true
 
-      // TODO: 替换为真实 API 调用
-      // const params = {
-      //   username: formData.username,
-      //   password: formData.password
-      // }
-      // const res = await AuthService.register(params)
-      // if (res.code === ApiStatus.success) {
-      //   ElMessage.success('注册成功')
-      //   toLogin()
-      // }
+      const { access_token: token } = await fetchRegister({
+        username: formData.username,
+        password: formData.password,
+        invite_code: formData.inviteCode
+      })
+      if (!token) throw new Error('注册失败：未收到 token')
 
-      // 模拟注册请求
-      setTimeout(() => {
-        loading.value = false
-        ElMessage.success('注册成功')
-        toLogin()
-      }, REDIRECT_DELAY)
+      // 注册即登录：后端签发 JWT，路由守卫随后拉取真实角色
+      const userStore = useUserStore()
+      userStore.setToken(token)
+      userStore.setLoginStatus(true)
+      ElMessage.success('注册成功，已为你开通企业管理员账号')
+      router.push('/')
     } catch (error) {
-      console.error('表单验证失败:', error)
+      console.error('[Register] 注册失败:', error)
+    } finally {
       loading.value = false
     }
-  }
-
-  /**
-   * 跳转到登录页面
-   */
-  const toLogin = () => {
-    setTimeout(() => {
-      router.push({ name: 'Login' })
-    }, REDIRECT_DELAY)
   }
 </script>
 

@@ -37,7 +37,7 @@ class FakeLLM:
         max_tokens: int | None = None,
     ):
         answer = self._answer(messages)
-        for i, ch in enumerate(answer):
-            yield StreamChunk(delta=ch, finish=(i == len(answer) - 1))
-        if not answer:
-            yield StreamChunk(delta="", finish=True)
+        for ch in answer:
+            yield StreamChunk(delta=ch)
+        # 末帧带 usage，模拟厂商在 [DONE] 前回 usage 的行为，成本用例可断言
+        yield StreamChunk(delta="", finish=True, tokens_in=10, tokens_out=len(answer))

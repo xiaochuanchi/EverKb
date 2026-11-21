@@ -1,10 +1,13 @@
-"""首账号 seed（Task 14）：创建管理后台第一个 admin_user 账号。
+"""首账号 seed（Task 14）：创建平台第一个 PLATFORM 账号 + 默认企业。
 
 手动执行（仓库根）：`python3 scripts/seed_admin.py`，交互式输入密码；
 或 `python3 scripts/seed_admin.py --username ops --password 'S3cret!xx'`。
 
 行为：库中已存在任何账号时拒绝创建（防覆盖/重复 seed）——多账号管理
 一期不做，改密走管理后台 user-center（PUT /api/v1/admin/auth/password）。
+
+M1 商业化多租户：首个账号为 PLATFORM（平台管理员），同时创建「默认企业」
+（存量数据归位用），platform 账号不绑企业（enterprise_id 保持 NULL）。
 """
 import argparse
 import getpass
@@ -18,7 +21,7 @@ from sqlalchemy import func, select  # noqa: E402
 
 from app.core.db import init_db, make_engine, make_session_factory  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
-from app.models import AdminUser  # noqa: E402
+from app.models import AdminUser, Enterprise, EnterpriseStatus, UserRole  # noqa: E402
 
 
 def _main() -> int:
@@ -45,9 +48,22 @@ def _main() -> int:
         if existing:
             print(f"错误：库中已有 {existing} 个账号，拒绝重复 seed（改密请走管理后台）")
             return 1
-        session.add(AdminUser(username=username, password_hash=hash_password(password)))
+        # 默认企业：存量数据归位 + 后续企业侧隔离的锚点
+        ent = session.scalar(select(Enterprise).order_by(Enterprise.id).limit(1))
+        if ent is None:
+            ent = Enterprise(name="默认企业", status=EnterpriseStatus.ACTIVE)
+            session.add(ent)
+            session.flush()
+        session.add(
+            AdminUser(
+                username=username,
+                password_hash=hash_password(password),
+                role=UserRole.PLATFORM,
+                enterprise_id=None,  # 平台账号不绑企业
+            )
+        )
         session.commit()
-    print(f"已创建账号 {username}，可用其登录 /api/v1/admin/auth/login")
+    print(f"已创建平台管理员 {username}（默认企业 id={ent.id}），可用其登录 /api/v1/admin/auth/login")
     return 0
 
 

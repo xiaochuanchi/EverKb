@@ -15,7 +15,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.models import App
+from app.models import App, Enterprise, EnterpriseStatus
 
 _API_KEY_HEADER = "X-API-Key"
 
@@ -39,6 +39,11 @@ def require_api_key(
     """X-API-Key 鉴权依赖：读头 → 查 app.api_key → 401/403 → 返回 App。
 
     key 不存在或为空一律 401（不泄露应用是否存在）；应用停用 403。
+
+    M2 商业化多租户：open 侧是真实计费入口（方案 §6），查 app 时须一并校验
+    所属企业状态——冻结（FROZEN）/ 已清理（PURGED）企业的 app 一律 403，
+    否则 API Key 是无限费洞口。enterprise_id=NULL 视为平台资产（存量/平台
+    自建应用），不冻结，计费时跳过。
     """
     api_key = request.headers.get(_API_KEY_HEADER)
     app = _get_app_by_key(db, api_key)
@@ -46,6 +51,10 @@ def require_api_key(
         raise _unauthorized()
     if not app.enabled:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="应用已停用")
+    if app.enterprise_id is not None:
+        ent = db.get(Enterprise, app.enterprise_id)
+        if ent is not None and ent.status in {EnterpriseStatus.FROZEN, EnterpriseStatus.PURGED}:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="企业已冻结，服务不可用")
     return app
 
 

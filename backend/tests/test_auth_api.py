@@ -1,6 +1,6 @@
 """鉴权 API 行为锁定（Task 14）：login / me / password + 整包鉴权 + 启动守卫。
 
-client 夹具默认带已登录 token（conftest 预置 admin/test1234）；鉴权自身的
+platform_client 夹具默认带已登录 token（conftest 预置 admin/test1234）；鉴权自身的
 负向用例显式删除/覆盖该头。红线 3：全程 SQLite + Fake，不触网。
 """
 import pytest
@@ -17,32 +17,32 @@ from tests.conftest import TEST_ADMIN_PASSWORD, TEST_ADMIN_USERNAME, make_test_s
 BASE = "/api/v1/admin/auth"
 
 
-def _login(client, username=TEST_ADMIN_USERNAME, password=TEST_ADMIN_PASSWORD):
-    return client.post(f"{BASE}/login", json={"username": username, "password": password})
+def _login(platform_client, username=TEST_ADMIN_USERNAME, password=TEST_ADMIN_PASSWORD):
+    return platform_client.post(f"{BASE}/login", json={"username": username, "password": password})
 
 
 # ── 登录 ─────────────────────────────────────────────────────────
 
 
-def test_login_success_returns_bearer_token(client):
-    r = _login(client)
+def test_login_success_returns_bearer_token(platform_client):
+    r = _login(platform_client)
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["token_type"] == "bearer"
     assert data["access_token"]
 
 
-def test_login_wrong_password_and_unknown_username_share_message(client):
+def test_login_wrong_password_and_unknown_username_share_message(platform_client):
     """防账号枚举：两种失败同一措辞（决策锁定）。"""
-    wrong_password = _login(client, password="not-the-one").json()["message"]
-    unknown_user = _login(client, username="ghost").json()["message"]
+    wrong_password = _login(platform_client, password="not-the-one").json()["message"]
+    unknown_user = _login(platform_client, username="ghost").json()["message"]
     assert wrong_password == unknown_user == "用户名或密码错误"
-    assert _login(client, password="not-the-one").status_code == 401
+    assert _login(platform_client, password="not-the-one").status_code == 401
 
 
-def test_login_inactive_account_rejected(client):
-    seed_admin(client.app, username="frozen", is_active=False)
-    r = _login(client, username="frozen")
+def test_login_inactive_account_rejected(platform_client):
+    seed_admin(platform_client.app, username="frozen", is_active=False)
+    r = _login(platform_client, username="frozen")
     assert r.status_code == 401
     assert r.json()["message"] == "账号已禁用"
 
@@ -50,8 +50,8 @@ def test_login_inactive_account_rejected(client):
 # ── 整包鉴权 ─────────────────────────────────────────────────────
 
 
-def test_me_returns_current_user(client):
-    r = client.get(f"{BASE}/me")
+def test_me_returns_current_user(platform_client):
+    r = platform_client.get(f"{BASE}/me")
     assert r.status_code == 200
     data = r.json()["data"]
     assert data["username"] == TEST_ADMIN_USERNAME
@@ -59,37 +59,37 @@ def test_me_returns_current_user(client):
     assert "password_hash" not in data  # 敏感列绝不外发
 
 
-def test_admin_route_without_token_is_401(client):
+def test_admin_route_without_token_is_401(platform_client):
     """业务路由整包挂 require_admin 的锁定：无头 → 401 + WWW-Authenticate。"""
-    del client.headers["Authorization"]
-    r = client.get("/api/v1/admin/kbs")
+    del platform_client.headers["Authorization"]
+    r = platform_client.get("/api/v1/admin/kbs")
     assert r.status_code == 401
     assert r.headers["www-authenticate"] == "Bearer"
 
 
-def test_admin_route_with_garbage_token_is_401(client):
-    client.headers["Authorization"] = "Bearer not-a-jwt"
-    assert client.get("/api/v1/admin/kbs").status_code == 401
+def test_admin_route_with_garbage_token_is_401(platform_client):
+    platform_client.headers["Authorization"] = "Bearer not-a-jwt"
+    assert platform_client.get("/api/v1/admin/kbs").status_code == 401
 
 
-def test_admin_route_with_expired_token_is_401(client, tmp_path):
+def test_admin_route_with_expired_token_is_401(platform_client, tmp_path):
     """过期 token（exp 在过去）→ 401，由 require_admin 折叠 jwt 异常。"""
     expired = make_test_settings(tmp_path, jwt_expire_hours=-1)  # 同 jwt_secret="test"
-    client.headers["Authorization"] = f"Bearer {create_access_token(1, expired)}"
-    assert client.get("/api/v1/admin/kbs").status_code == 401
+    platform_client.headers["Authorization"] = f"Bearer {create_access_token(1, expired)}"
+    assert platform_client.get("/api/v1/admin/kbs").status_code == 401
 
 
-def test_login_endpoint_does_not_require_token(client):
+def test_login_endpoint_does_not_require_token(platform_client):
     """登录端点在 auth 子树内，无凭证可访问（整包鉴权豁免锁定）。"""
-    del client.headers["Authorization"]
-    assert _login(client).status_code == 200
+    del platform_client.headers["Authorization"]
+    assert _login(platform_client).status_code == 200
 
 
 # ── 改密码 ───────────────────────────────────────────────────────
 
 
-def test_change_password_wrong_old_password_400(client):
-    r = client.put(
+def test_change_password_wrong_old_password_400(platform_client):
+    r = platform_client.put(
         f"{BASE}/password",
         json={"old_password": "wrong-old", "new_password": "new-pass-99"},
     )
@@ -97,25 +97,25 @@ def test_change_password_wrong_old_password_400(client):
     assert r.json()["message"] == "原密码不正确"
 
 
-def test_change_password_success_rotates_credentials(client):
-    r = client.put(
+def test_change_password_success_rotates_credentials(platform_client):
+    r = platform_client.put(
         f"{BASE}/password",
         json={"old_password": TEST_ADMIN_PASSWORD, "new_password": "new-pass-99"},
     )
     assert r.status_code == 200
     # 旧密码立即失效，新密码可登录；新 token 可通过 /me
-    assert _login(client, password=TEST_ADMIN_PASSWORD).status_code == 401
-    login = _login(client, password="new-pass-99")
+    assert _login(platform_client, password=TEST_ADMIN_PASSWORD).status_code == 401
+    login = _login(platform_client, password="new-pass-99")
     assert login.status_code == 200
-    me = client.get(
+    me = platform_client.get(
         f"{BASE}/me",
         headers={"Authorization": f"Bearer {login.json()['data']['access_token']}"},
     )
     assert me.json()["data"]["username"] == TEST_ADMIN_USERNAME
 
 
-def test_change_password_min_length_enforced_422(client):
-    r = client.put(
+def test_change_password_min_length_enforced_422(platform_client):
+    r = platform_client.put(
         f"{BASE}/password",
         json={"old_password": TEST_ADMIN_PASSWORD, "new_password": "short"},
     )

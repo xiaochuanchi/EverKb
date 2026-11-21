@@ -14,7 +14,7 @@ from app.models import App, Chunk, Document, DocumentStatus, QaRecord, SourceTyp
 
 def _make_app(client, *, kb_ids, name="聊天应用", enabled=True, top_k=5, api_key=None) -> int:
     session = client.app.state.session_factory()
-    app = App(name=name, kb_ids=kb_ids, api_key=api_key or f"sk-{name}", enabled=enabled, top_k=top_k)
+    app = App(name=name, kb_ids=kb_ids, api_key=api_key or f"sk-{name}", enabled=enabled, top_k=top_k, enterprise_id=1)
     session.add(app)
     session.commit()
     session.refresh(app)
@@ -123,6 +123,7 @@ def test_assistant_chat_persists_is_admin_record_and_spans(client):
     assert rec.user_key == "admin"
     assert 3001 in rec.doc_ids
     assert rec.citations == final["citations"]
+    assert rec.latency_ms > 0  # 端到端耗时物化（回归锁定：字段曾有写入缺失恒 0）
 
     spans = session.query(TraceSpan).filter(TraceSpan.trace_id == rec.id).all()
     assert len(spans) >= 1

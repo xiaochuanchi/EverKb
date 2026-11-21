@@ -22,6 +22,8 @@ const router = useRouter();
 const pinia = getActivePinia();
 
 const CONFIG_KEY = "everkb_web_app_config";
+// 产品版本号（vite define 注入；模板直用全局常量过不了 vue-tsc）
+const appVersion = __APP_VERSION__;
 
 function readStored(): { appId: number; apiKey: string } | null {
   try {
@@ -83,7 +85,7 @@ function handleLogout(): void {
   <main class="chat-page">
     <!-- 顶栏 -->
     <header class="chat-header">
-      <div class="chat-brand">EverKB 对话</div>
+      <div class="chat-brand">EverKB 对话 <span class="chat-version">v{{ appVersion }}</span></div>
       <div class="chat-header-right">
         <span v-if="effective" class="chat-app-tag">应用 #{{ effective.appId }}</span>
         <button type="button" class="chat-logout" @click="handleLogout">退出登录</button>
@@ -132,6 +134,12 @@ function handleLogout(): void {
 .chat-brand {
   font-size: 16px;
   font-weight: 600;
+}
+
+.chat-version {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary, #909399);
 }
 
 .chat-header-right {

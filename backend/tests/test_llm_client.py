@@ -203,3 +203,40 @@ def test_stream_http_error_raises_llm_error():
     llm = OpenAICompatibleLLM("https://x/v1", "key", "m", transport=httpx.MockTransport(handler))
     with pytest.raises(LLMError):
         list(llm.chat_stream([_msg("user", "x")]))
+
+
+def test_stream_request_includes_usage_option():
+    """M2：流式请求须带 stream_options.include_usage，否则厂商不回真实 usage（方案 §6）。"""
+    captured: list[dict] = []
+    sse = _sse_body(["答"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(200, content=sse.encode("utf-8"))
+
+    llm = OpenAICompatibleLLM("https://x/v1", "key", "m", transport=httpx.MockTransport(handler))
+    list(llm.chat_stream([_msg("user", "x")]))
+    assert captured[0]["stream"] is True
+    assert captured[0]["stream_options"] == {"include_usage": True}
+
+
+def test_stream_collects_usage_from_last_frame():
+    """M2：末帧（delta 为空）回 usage 时，应正确解析进 finish chunk 的 tokens_in/out。"""
+    sse = (
+        "data: " + json.dumps({"choices": [{"delta": {"content": "答"}}]}, ensure_ascii=False) + "\n\n"
+        "data: " + json.dumps({
+            "choices": [{"delta": {}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 42, "completion_tokens": 7},
+        }, ensure_ascii=False) + "\n\n"
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=sse.encode("utf-8"))
+
+    llm = OpenAICompatibleLLM("https://x/v1", "key", "m", transport=httpx.MockTransport(handler))
+    chunks = list(llm.chat_stream([_msg("user", "x")]))
+    assert "".join(c.delta for c in chunks) == "答"
+    assert chunks[-1].finish is True
+    assert chunks[-1].tokens_in == 42
+    assert chunks[-1].tokens_out == 7

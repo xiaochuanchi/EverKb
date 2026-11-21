@@ -74,12 +74,26 @@ declare namespace Api {
       token_type: string
     }
 
-    /** GET /auth/me 原始响应 */
+    /** GET /auth/me 原始响应（含角色与企业归属） */
     interface MeResponse {
       id: number
       username: string
       is_active: boolean
       created_at: string
+      role: 'platform' | 'ent_admin' | 'member'
+      enterprise_id: number | null
+    }
+
+    /** POST /auth/register：凭企业管理员注册码注册，直接返回 token */
+    interface RegisterParams {
+      username: string
+      password: string
+      invite_code: string
+    }
+
+    interface RegisterResponse {
+      access_token: string
+      token_type: string
     }
 
     /** 用户信息（由 api 层从 MeResponse 映射，供模板 store/守卫消费） */
@@ -90,6 +104,8 @@ declare namespace Api {
       userName: string
       email: string
       avatar?: string
+      role?: 'platform' | 'ent_admin' | 'member'
+      enterpriseId?: number | null
     }
   }
 
@@ -446,6 +462,79 @@ declare namespace Api {
       eval_kb: string
       seed: number
       results: AblationResultItem[]
+    }
+
+    /* ============ 平台运营（M5） ============ */
+
+    /** 企业（后端 EnterpriseOut） */
+    interface Enterprise {
+      id: number
+      name: string
+      status: number
+      trial_ends_at: string | null
+      service_ends_at: string | null
+      frozen_at: string | null
+      freeze_reason: string
+      data_purge_at: string | null
+      contact_name: string
+      contact_way: string
+      note: string
+      created_at: string
+    }
+
+    /** POST /platform/enterprises 请求体 */
+    interface EnterpriseCreateParams {
+      name: string
+      trial_days?: number
+      budget_cny?: number
+      contact_name?: string
+      contact_way?: string
+      note?: string
+    }
+
+    /** POST /platform/enterprises/{id}/activate 请求体 */
+    interface EnterpriseActivateParams {
+      service_days?: number
+    }
+
+    /** POST /platform/enterprises/{id}/freeze 请求体 */
+    interface EnterpriseFreezeParams {
+      reason?: string
+    }
+
+    /** POST /platform/enterprises/{id}/topup 请求体 */
+    interface EnterpriseTopupParams {
+      amount: number
+    }
+
+    /** 企业管理员注册码（后端 InviteCodeOut，含明文码） */
+    interface InviteCode {
+      id: number
+      code: string
+      enterprise_id: number | null
+      max_uses: number
+      used_count: number
+      expires_at: string | null
+      enabled: boolean
+      note: string
+      created_at: string
+    }
+
+    /** POST /platform/enterprises/{id}/invites 请求体 */
+    interface InviteCodeCreateParams {
+      max_uses?: number
+      note?: string
+    }
+
+    /* ============ 企业钱包（M2 后端 / M5 前端页） ============ */
+
+    /** 钱包余额（后端 WalletOut） */
+    interface Wallet {
+      enterprise_id: number
+      budget_cny: number
+      spent_cny: number
+      reserved_cny: number
+      remaining_cny: number
     }
 
     /* ============ 平台概况（dashboard） ============ */

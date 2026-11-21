@@ -11,6 +11,7 @@ def _seed_record(client, *, app_id, question="问题", feedback=Feedback.NONE, *
     session = client.app.state.session_factory()
     rec = QaRecord(
         app_id=app_id,
+        enterprise_id=1,
         user_key="u1",
         question=question,
         answer="回答内容",
@@ -32,7 +33,7 @@ def _seed_record(client, *, app_id, question="问题", feedback=Feedback.NONE, *
 
 def _seed_app(client, *, name="记录应用", api_key="sk-rec") -> int:
     session = client.app.state.session_factory()
-    app = App(name=name, kb_ids=[], api_key=api_key, enabled=True)
+    app = App(name=name, kb_ids=[], api_key=api_key, enabled=True, enterprise_id=1)
     session.add(app)
     session.commit()
     session.refresh(app)

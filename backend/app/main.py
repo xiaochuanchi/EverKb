@@ -18,6 +18,7 @@ from fastapi.routing import APIRoute
 from app.api.apps import router as apps_router
 from app.api.assistant import router as assistant_router
 from app.api.auth import require_admin, router as auth_router
+from app.api.authz import require_platform
 from app.api.chunks import router as chunks_router
 from app.api.dashboard import router as dashboard_router
 from app.api.documents import router as documents_router
@@ -26,9 +27,11 @@ from app.api.evals import router as evals_router
 from app.api.kb import router as kb_router
 from app.api.notifications import router as notifications_router
 from app.api.open import router as open_router
+from app.api.platform import router as platform_router
 from app.api.reconciliation import router as reconciliation_router
 from app.api.records import router as records_router
 from app.api.traces import router as traces_router
+from app.api.wallet import router as wallet_router
 from app.core.config import Settings, get_settings
 from app.core.db import init_db, make_engine, make_session_factory
 from app.core.storage import LocalDiskStorage, StorageClient
@@ -39,6 +42,10 @@ from app.services.ratelimit import FakeRateLimiter, RedisRateLimiter
 from app.services.vector import create_vector
 from app.services.vector.hybrid_index import BM25IndexManager
 from app.workers import start_worker
+
+# 产品版本号：唯一源在仓库根 VERSION，scripts/sync_version.py 同步到此处；
+# /health 与 FastAPI(version=) 共用
+APP_VERSION = "0.1.1"
 
 
 @asynccontextmanager
@@ -109,7 +116,7 @@ def create_app(
     bm25=None,
 ) -> FastAPI:
     settings = settings or get_settings()
-    app = FastAPI(title="EverKB API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="EverKB API", version=APP_VERSION, lifespan=lifespan)
     register_exception_handlers(app)  # 统一信封异常映射
     app.state.settings = settings
 
@@ -150,13 +157,18 @@ def create_app(
     app.include_router(evals_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(dashboard_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(assistant_router, prefix="/api/v1/admin", dependencies=admin_auth)
+    app.include_router(wallet_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(notifications_router, prefix="/api/v1/admin", dependencies=admin_auth)
     app.include_router(open_router, prefix="/api/v1")
+    # 平台运营后台（M5）：整包 require_platform，端点级已挂载（路由自管）。
+    app.include_router(platform_router, prefix="/api/v1")
     _assert_admin_routes_protected(app)
+    _assert_platform_routes_protected(app)
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok"}
+        # 豁免信封；version 供线上核对部署版本（VERSION 单一源同步）
+        return {"status": "ok", "version": APP_VERSION}
 
     return app
 
@@ -202,6 +214,41 @@ def _assert_admin_routes_protected(app: FastAPI) -> None:
                 _walk(inner, prefix, include_deps)
 
     _walk(app.routes, "", ())
+
+
+def _assert_platform_routes_protected(app: FastAPI) -> None:
+    """启动守卫：/api/v1/platform 下路由漏挂 require_platform 即拒绝启动。
+
+    platform 路由端点级用 Depends(require_platform) 自管鉴权（不走 include 级
+    dependencies），此处递归穿透验证每个端点都挂了 require_platform（fail-closed，
+    漏配即炸启动，杜绝运营接口裸奔）。
+    """
+
+    def _has_require_platform(deps) -> bool:
+        for dep in deps:
+            if getattr(dep, "call", None) is require_platform:
+                return True
+        return False
+
+    def _walk(routes, prefix: str) -> None:
+        for route in routes:
+            if isinstance(route, APIRoute):
+                full_path = prefix + route.path
+                if not full_path.startswith("/api/v1/platform"):
+                    continue
+                if not _has_require_platform(route.dependant.dependencies):
+                    raise RuntimeError(f"platform 路由漏挂鉴权: {route.methods} {full_path}")
+                continue
+            ctx = getattr(route, "include_context", None)
+            original = getattr(route, "original_router", None)
+            if ctx is not None and original is not None:
+                _walk(original.routes, prefix + ctx.prefix)
+                continue
+            inner = getattr(route, "routes", None)
+            if inner is not None:
+                _walk(inner, prefix)
+
+    _walk(app.routes, "")
 
 
 app = create_app()
