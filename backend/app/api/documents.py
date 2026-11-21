@@ -7,7 +7,7 @@
 多租户（M1/M5）：所有端点 require_enterprise + ensure_owned，按 enterprise_id
 隔离；kb 与 doc 的归属都校验（跨企业访问统一 404，不泄露存在性）。
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.core.storage import StorageClient
 from app.models import AdminUser, Chunk, Document, DocumentStatus, KnowledgeBase, SourceType
 from app.parsers import SUPPORTED_FILE_TYPES
 from app.schemas import (
+    MAX_BATCH_ITEMS,
     ContentOut,
     ContentUpdate,
     DocumentEnabledPatch,
@@ -119,6 +120,58 @@ def upload_document(
     db.commit()
     db.refresh(doc)
     return doc
+
+
+@router.post(
+    "/kbs/{kb_id}/documents/batch",
+    status_code=status.HTTP_201_CREATED,
+    response_model=list[DocumentOut],
+)
+def upload_documents_batch(
+    kb_id: int,
+    files: list[UploadFile] = File(..., alias="file"),  # multipart 字段名与单文件接口一致
+    user: AdminUser = Depends(require_enterprise),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(_settings),
+    storage: StorageClient = Depends(_storage),
+) -> list[Document]:
+    """批量上传文件建文档（≤MAX_BATCH_ITEMS/请求）。
+
+    全部文件先校验（扩展名→大小）再落库落存储：任一文件非法则整体
+    400/413，不产生半批状态；处理交给 worker。
+    """
+    if not 1 <= len(files) <= MAX_BATCH_ITEMS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"单次上传文件数须在 1–{MAX_BATCH_ITEMS} 之间",
+        )
+    _get_owned_kb_or_404(db, kb_id, user.enterprise_id)
+    exts = [_check_extension(f.filename or "") for f in files]
+    payloads = []
+    for f in files:
+        data = f.file.read()
+        _check_size(data, settings)
+        payloads.append((f.filename, data))
+    docs = []
+    for (name, data), ext in zip(payloads, exts):
+        doc = Document(
+            kb_id=kb_id,
+            name=name,
+            source_type=SourceType.UPLOAD,
+            file_type=ext,
+            file_size=len(data),
+            status=DocumentStatus.UPLOADED,
+            enterprise_id=user.enterprise_id,
+        )
+        db.add(doc)
+        db.flush()  # 回填 id 构造对象路径
+        doc.oss_key = f"kb/{kb_id}/doc/{doc.id}/source.{ext}"
+        storage.put_bytes(doc.oss_key, data)
+        docs.append(doc)
+    db.commit()
+    for doc in docs:
+        db.refresh(doc)
+    return docs
 
 
 @router.post(

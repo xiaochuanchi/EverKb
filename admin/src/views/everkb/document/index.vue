@@ -41,7 +41,7 @@
       </div>
 
       <div class="toolbar-right">
-        <ElButton type="primary" :disabled="!currentKbId" @click="uploadVisible = true">
+        <ElButton type="primary" :disabled="!currentKbId" @click="openUpload">
           <el-icon class="mr-1"><Upload /></el-icon>
           {{ $t('everkb.document.uploadDocument') }}
         </ElButton>
@@ -170,11 +170,12 @@
       :close-on-click-modal="false"
     >
       <ElUpload
+        v-model:file-list="uploadFileList"
         drag
+        multiple
         :auto-upload="false"
-        :limit="1"
-        :on-change="handleFileChange"
-        :on-remove="() => (uploadFile = null)"
+        :limit="UPLOAD_LIMIT"
+        :on-exceed="handleUploadExceed"
         accept=".docx,.pdf,.xlsx,.txt,.md,.csv,.html"
       >
         <el-icon :size="40" class="upload-icon"><UploadFilled /></el-icon>
@@ -188,7 +189,12 @@
       </ElUpload>
       <template #footer>
         <ElButton @click="uploadVisible = false">{{ $t('everkb.document.cancel') }}</ElButton>
-        <ElButton type="primary" :loading="uploading" :disabled="!uploadFile" @click="handleUpload">
+        <ElButton
+          type="primary"
+          :loading="uploading"
+          :disabled="!uploadFileList.length"
+          @click="handleUpload"
+        >
           {{ $t('everkb.document.upload') }}
         </ElButton>
       </template>
@@ -207,11 +213,10 @@
         </template>
       </I18nT>
       <ElUpload
+        v-model:file-list="replaceFileList"
         drag
         :auto-upload="false"
         :limit="1"
-        :on-change="handleReplaceFileChange"
-        :on-remove="() => (replaceFile = null)"
         accept=".docx,.pdf,.xlsx,.txt,.md,.csv,.html"
       >
         <el-icon :size="40" class="upload-icon"><UploadFilled /></el-icon>
@@ -228,7 +233,7 @@
         <ElButton
           type="primary"
           :loading="replacing"
-          :disabled="!replaceFile"
+          :disabled="!replaceFileList.length"
           @click="handleReplace"
         >
           {{ $t('everkb.document.replace') }}
@@ -282,6 +287,7 @@
 
 <script setup lang="ts">
   import { ElMessage, ElMessageBox } from 'element-plus'
+  import type { UploadRawFile, UploadUserFile } from 'element-plus'
   import { I18nT, useI18n } from 'vue-i18n'
   import { Document, Link, Refresh, Upload, UploadFilled } from '@element-plus/icons-vue'
   import { MdPreview } from 'md-editor-v3'
@@ -295,7 +301,7 @@
     patchDocumentEnabled,
     replaceDocumentFile,
     retryDocument,
-    uploadDocument
+    uploadDocumentsBatch
   } from '@/api/document'
   import { fetchKbList } from '@/api/kb'
   import { DOC_SOURCE_TYPE, DOC_STATUS } from '@/constants/everkb'
@@ -499,24 +505,32 @@
   }
 
   // ── 上传 ─────────────────────────────────────────────────────────
+  const UPLOAD_LIMIT = 50
   const uploadVisible = ref(false)
   const uploading = ref(false)
-  const uploadFile = ref<File | null>(null)
+  const uploadFileList = ref<UploadUserFile[]>([])
 
-  const handleFileChange = (file: { raw?: File }) => {
-    uploadFile.value = file.raw ?? null
+  // 每次打开弹窗先清空文件列表，避免残留上次的选择
+  const openUpload = () => {
+    uploadFileList.value = []
+    uploadVisible.value = true
+  }
+
+  const handleUploadExceed = () => {
+    ElMessage.warning(t('everkb.document.tooManyFiles'))
   }
 
   const handleUpload = async () => {
-    if (!uploadFile.value || !currentKbId.value) return
+    const files = uploadFileList.value.map((f) => f.raw).filter((f): f is UploadRawFile => !!f)
+    if (!files.length || !currentKbId.value) return
     uploading.value = true
     try {
-      await uploadDocument(currentKbId.value, uploadFile.value)
+      await uploadDocumentsBatch(currentKbId.value, files)
       uploadVisible.value = false
-      uploadFile.value = null
+      uploadFileList.value = []
       await refreshCreate()
     } catch {
-      // http 层已弹错误
+      // http 层已弹错误；弹窗保留，用户可剔除非法文件后重试
     } finally {
       uploading.value = false
     }
@@ -526,24 +540,22 @@
   const replaceVisible = ref(false)
   const replacing = ref(false)
   const replacingDoc = ref<DocRow | null>(null)
-  const replaceFile = ref<File | null>(null)
+  const replaceFileList = ref<UploadUserFile[]>([])
 
   const openReplace = (row: DocRow) => {
     replacingDoc.value = row
-    replaceFile.value = null
+    replaceFileList.value = []
     replaceVisible.value = true
   }
 
-  const handleReplaceFileChange = (file: { raw?: File }) => {
-    replaceFile.value = file.raw ?? null
-  }
-
   const handleReplace = async () => {
-    if (!replaceFile.value || !replacingDoc.value) return
+    const file = replaceFileList.value[0]?.raw
+    if (!file || !replacingDoc.value) return
     replacing.value = true
     try {
-      await replaceDocumentFile(replacingDoc.value.id, replaceFile.value)
+      await replaceDocumentFile(replacingDoc.value.id, file)
       replaceVisible.value = false
+      replaceFileList.value = []
       await refreshUpdate()
     } catch {
       // http 层已弹错误

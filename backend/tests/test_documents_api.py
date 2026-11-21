@@ -127,6 +127,82 @@ def test_upload_oversize_413(tmp_path):
         assert r.status_code == 413
 
 
+# ── 批量文件上传 ─────────────────────────────────────────────────
+
+
+def _batch_upload(client, kb_id: int, files: list[tuple[str, bytes]]):
+    return client.post(
+        f"{BASE}/kbs/{kb_id}/documents/batch",
+        files=[("file", (name, data, "application/octet-stream")) for name, data in files],
+    )
+
+
+def test_batch_upload_creates_documents(client):
+    kb_id = _kb(client)
+    files = [
+        ("手册一.docx", make_docx_bytes([("标题", ["正文"])])),
+        ("手册二.txt", "纯文本内容".encode()),
+    ]
+    r = _batch_upload(client, kb_id, files)
+    assert r.status_code == 201
+    body = r.json()["data"]
+    assert len(body) == 2
+    for doc, (name, data) in zip(body, files):
+        assert doc["name"] == name
+        assert doc["status"] == DocumentStatus.UPLOADED
+        assert doc["source_type"] == SourceType.UPLOAD
+        assert doc["file_size"] == len(data)
+    # oss_key 按路径约定回填，对象已落存储
+    with client.app.state.session_factory() as s:
+        for doc in body:
+            row = s.get(Document, doc["id"])
+            assert row.oss_key == f"kb/{kb_id}/doc/{doc['id']}/source.{row.file_type}"
+            client.app.state.storage.get_bytes(row.oss_key)  # 不抛 FileNotFoundError 即存在
+
+
+def test_batch_upload_over_limit_422(client):
+    kb_id = _kb(client)
+    files = [(f"文件{i}.txt", b"x") for i in range(51)]
+    assert _batch_upload(client, kb_id, files).status_code == 422
+
+
+def test_batch_upload_all_or_nothing_on_bad_extension(client):
+    """任一文件扩展名非法 → 整体 400，一个文档都不建（无半批状态）。"""
+    kb_id = _kb(client)
+    files = [("好文档.txt", b"x"), ("坏文档.doc", b"x")]
+    r = _batch_upload(client, kb_id, files)
+    assert r.status_code == 400
+    with client.app.state.session_factory() as s:
+        assert s.query(Document).count() == 0
+
+
+def test_batch_upload_to_missing_kb_404(client):
+    assert _batch_upload(client, 999, [("a.txt", b"x")]).status_code == 404
+
+
+def test_batch_upload_oversize_413(tmp_path):
+    settings = make_test_settings(tmp_path, upload_max_bytes=1000)
+    app = create_app(
+        settings,
+        storage=LocalDiskStorage(root=str(tmp_path / "storage")),
+        embedder=FakeEmbedder(dim=8),
+        vector=FakeVector(dim=8),
+    )
+    with TestClient(app) as c:
+        from app.models import Enterprise, EnterpriseStatus, UserRole
+
+        with app.state.session_factory() as s:
+            s.add(Enterprise(id=1, name="测试企业", status=EnterpriseStatus.ACTIVE))
+            s.commit()
+        user = seed_admin(app, role=UserRole.ENT_ADMIN, enterprise_id=1)
+        c.headers["Authorization"] = f"Bearer {create_access_token(user.id, settings)}"
+        files = [("小文件.txt", b"x"), ("大文件.docx", make_docx_bytes([("标题", ["正文"])]))]
+        r = _batch_upload(c, _kb(c), files)
+        assert r.status_code == 413
+        with app.state.session_factory() as s:
+            assert s.query(Document).count() == 0
+
+
 # ── 网页批量添加 ─────────────────────────────────────────────────
 
 

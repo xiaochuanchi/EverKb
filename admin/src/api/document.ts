@@ -20,14 +20,14 @@ export function fetchDocumentDetail(docId: number) {
 }
 
 /**
- * 上传文件建文档（白名单 docx/pdf/xlsx，超限 413）
- * @param file 原始 File 对象（FormData 传输，拦截器不覆盖其 Content-Type）
+ * 批量上传文件建文档（≤50/请求，任一文件非法整体 400/413）
+ * @param files 原始 File 列表（FormData 传输，拦截器不覆盖其 Content-Type）
  */
-export function uploadDocument(kbId: number, file: File) {
+export function uploadDocumentsBatch(kbId: number, files: File[]) {
   const formData = new FormData()
-  formData.append('file', file)
-  return request.post<Api.EverKB.Document>({
-    url: `/api/v1/admin/kbs/${kbId}/documents`,
+  files.forEach((file) => formData.append('file', file))
+  return request.post<Api.EverKB.Document[]>({
+    url: `/api/v1/admin/kbs/${kbId}/documents/batch`,
     data: formData,
     showSuccessMessage: true
   })

@@ -183,6 +183,9 @@ class PasswordChangeRequest(BaseModel):
 
 # ── 文档（Task 11）───────────────────────────────────────────────
 
+# 批量操作上限（Global Constraints）：网页批量与文件批量上传共用
+MAX_BATCH_ITEMS = 50
+
 
 class DocumentOut(BaseModel):
     """文档响应体（对齐 models.Document 列；oss_key 是存储内路径，属管线内部细节不外发）。"""
@@ -211,7 +214,7 @@ class WebDocCreate(BaseModel):
     """POST /kbs/{kb_id}/documents/web 请求体：批量网页 ≤50 条/请求（Global Constraints）。"""
 
     urls: list[Annotated[str, StringConstraints(max_length=1024)]] = Field(
-        min_length=1, max_length=50
+        min_length=1, max_length=MAX_BATCH_ITEMS
     )
 
 
